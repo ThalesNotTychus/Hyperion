@@ -1,0 +1,95 @@
+<Window x:Class="CodexMultiLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Hyperion"
+        Width="1380" Height="900" MinWidth="1040" MinHeight="760"
+        WindowStartupLocation="CenterScreen"
+        Icon="Assets/AppIcon.ico"
+        Background="#FF0B0E14"
+        Closing="MainWindow_Closing">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="0"
+                        ResizeBorderThickness="6"
+                        GlassFrameThickness="1"
+                        CornerRadius="12"
+                        UseAeroCaptionButtons="False" />
+  </shell:WindowChrome.WindowChrome>
+
+  <Border x:Name="RootFrame" Background="#FF0B0E14" BorderBrush="#FF1E2636" BorderThickness="1">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Setter Property="Margin" Value="0" />
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+            <Setter Property="Margin" Value="7" />
+            <Setter Property="BorderThickness" Value="0" />
+          </DataTrigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" MinWidth="680" />
+        <ColumnDefinition x:Name="PreviewSplitterColumn" Width="0" />
+        <ColumnDefinition x:Name="PreviewPaneColumn" Width="0" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Primary ADE Command Center WebView2 -->
+      <Grid Grid.Column="0">
+        <wv2:WebView2 x:Name="ShellWebView" DefaultBackgroundColor="#FF0B0E14" />
+        <Border x:Name="BootOverlay" Background="#FF0B0E14" IsHitTestVisible="False">
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border Width="52" Height="52" Padding="9" Background="#FF161D2B" BorderBrush="#FF28344B" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Center">
+              <Image Source="Assets/AppIcon.png" />
+            </Border>
+            <TextBlock Margin="0,14,0,0" FontSize="17" FontWeight="SemiBold" Foreground="#FFF1F5F9" HorizontalAlignment="Center" Text="Hyperion" />
+            <TextBlock x:Name="BootStatusText" Margin="0,6,0,0" FontSize="12" Foreground="#FF94A3B8" HorizontalAlignment="Center" Text="正在初始化多智能体指挥舱与隔离工作区…" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- Resizable Design Mode Splitter -->
+      <GridSplitter x:Name="PreviewSplitter"
+                    Grid.Column="1"
+                    Width="5"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="#FF1E2636"
+                    Visibility="Collapsed" />
+
+      <!-- Secondary Live Browser Design Mode WebView2 -->
+      <Border x:Name="PreviewContainer"
+              Grid.Column="2"
+              Background="#FF0F141F"
+              BorderBrush="#FF1E2636"
+              BorderThickness="1,0,0,0"
+              Visibility="Collapsed">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="38" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+          <Border Background="#FF111724" BorderBrush="#FF1E2636" BorderThickness="0,0,0,1" Padding="10,0">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse x:Name="InspectActiveDot" Width="8" Height="8" Fill="#FF38BDF8" Margin="0,0,7,0" Visibility="Collapsed" />
+                <TextBlock x:Name="PreviewTitleText" FontSize="11.5" Foreground="#FFCBD5E1" Text="Design Mode · 实时网页预览与点选抓取" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+              <Button Grid.Column="1" Content="关闭预览" Padding="8,3" FontSize="11" Cursor="Hand"
+                      Background="#FF1E293B" Foreground="#FFE2E8F0" BorderBrush="#FF334155" BorderThickness="1"
+                      Click="ClosePreviewPane_Click" />
+            </Grid>
+          </Border>
+          <wv2:WebView2 x:Name="PreviewWebView" Grid.Row="1" DefaultBackgroundColor="White" />
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

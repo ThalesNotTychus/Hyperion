@@ -1,0 +1,14 @@
+[Bb]in/
+[Oo]bj/
+.vs/
+packages/
+NuGet.Config
+data/
+dist/
+artifacts/
+Microsoft/
+*.user
+*.suo
+docs/LAUNCH_PLAYBOOK.md
+
+

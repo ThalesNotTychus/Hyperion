@@ -1,0 +1,33 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,props,pubxml,xaml}]
+indent_style = space
+indent_size = 4
+
+[*.{js,mjs,css,html,json,yml,yaml,md}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Roslyn analyzer tuning for WPF + Win32 P/Invoke + contract tests
+[*.cs]
+# WPF Window manages disposable child services in Closing/Closed rather than implementing IDisposable directly
+dotnet_diagnostic.CA1001.severity = none
+# Intentional immutable IReadOnlyList<T> return contracts and stateless service methods
+dotnet_diagnostic.CA1822.severity = none
+dotnet_diagnostic.CA1859.severity = none
+# Win32 interop struct/pointer member naming and kernel32 StringBuilder buffers
+dotnet_diagnostic.CA1720.severity = none
+dotnet_diagnostic.CA1838.severity = none
+dotnet_diagnostic.CA2201.severity = none
+
+[tests/**/*.cs]
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1861.severity = none
