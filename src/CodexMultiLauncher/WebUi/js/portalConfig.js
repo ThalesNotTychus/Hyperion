@@ -6,8 +6,8 @@
 // 2. apiGuideUrl: 添加智能体弹窗内「获取 API Key 与算力配置指南 ↗」点击后打开的页面地址
 
 export const PORTAL_CONFIG = {
-  websiteUrl: "https://github.com/ThalesNotTychus/Hyperion#readme",
-  apiGuideUrl: "https://github.com/ThalesNotTychus/Hyperion#quick-start",
+  websiteUrl: "https://thalesnottychus.github.io/Hyperion/",
+  apiGuideUrl: "https://thalesnottychus.github.io/Hyperion/#quick-start",
   showDocsNavButton: true,
   showApiGuideLink: true,
 };

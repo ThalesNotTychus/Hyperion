@@ -35,7 +35,7 @@ function Copy-CleanTree([string] $RelSubDir) {
     }
 }
 
-foreach ($dir in @('.github', 'src', 'tests', 'scripts', 'docs')) {
+foreach ($dir in @('.github', 'src', 'tests', 'scripts', 'docs', 'site')) {
     Copy-CleanTree $dir
 }
 

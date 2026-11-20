@@ -5,7 +5,7 @@
   <p><em>Universal Multi-Agent Command Flagship, Isolated Account Pool &amp; Headless Git Worktree Arena for Windows</em></p>
 
   <p>
-    <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/%F0%9F%87%A8%F0%9F%87%B3_%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E5%BD%93%E5%89%8D%E9%98%85%E8%AF%BB-0EA5E9?style=for-the-badge" alt="简体中文" /></a>
+    <a href="https://thalesnottychus.github.io/Hyperion/"><img src="https://img.shields.io/badge/%F0%9F%8C%90_%E5%AE%98%E6%96%B9%E7%BD%91%E7%AB%99-%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-6366F1?style=for-the-badge" alt="官方网站" /></a>
     <a href="README.md"><img src="https://img.shields.io/badge/%F0%9F%8C%90_English-Switch_to_English-334155?style=for-the-badge" alt="English" /></a>
     <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_%E7%AB%8B%E5%8D%B3%E4%B8%8B%E8%BD%BD_v0.0.1-%E5%85%8D%E5%AE%89%E8%A3%85%E4%BE%BF%E6%90%BA%E7%89%88-10B981?style=for-the-badge" alt="下载便携版" /></a>
   </p>
