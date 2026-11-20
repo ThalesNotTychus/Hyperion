@@ -75,6 +75,12 @@
 - 🖥️ **[海外独享物理 Mac mini 云工作站：7×24h 稳定运行 Claude 方案](https://github.com/ThalesNotTychus/Hyperion/discussions/2)**：告别本地网络波动伤号与关机断连，一人一机海外原生固定网络环境全天候运行长程 Agent 编排与跨端编译。
 - 💬 **[加入官方开发者社区与功能许愿池](https://github.com/ThalesNotTychus/Hyperion/discussions/1)**：反馈需求、交流多智能体工作流与获取算力环境配置建议。
 
+<p align="center">
+  <a href="https://thalesnottychus.github.io/Hyperion/#advisor">
+    <img src="docs/images/advisor-contact.png" alt="微信扫码添加企业微信技术顾问 · 海外独享 Mac 工作站与多账号算力配置咨询" width="100%" />
+  </a>
+</p>
+
 ---
 
 ## 快速开始

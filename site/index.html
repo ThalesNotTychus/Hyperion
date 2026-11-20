@@ -457,6 +457,78 @@
     }
     .playbook-link:hover { color: #7dd3fc; }
 
+    /* WeCom Advisor Card & Floating FAB */
+    .advisor-banner {
+      margin-top: 22px;
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(99, 102, 241, 0.12));
+      border: 1px solid rgba(56, 189, 248, 0.42);
+      border-radius: 18px;
+      padding: 24px 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      box-shadow: 0 20px 48px -22px rgba(56, 189, 248, 0.4);
+    }
+    .advisor-copy h3 {
+      font-size: 20px;
+      font-weight: 800;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+    .advisor-copy p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      max-width: 680px;
+    }
+    .advisor-qr-box {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 7px;
+      background: rgba(9, 14, 28, 0.72);
+      border: 1px solid rgba(56, 189, 248, 0.32);
+      border-radius: 14px;
+      padding: 12px 14px 10px;
+    }
+    .advisor-qr-box img {
+      width: 138px;
+      height: 138px;
+      border-radius: 8px;
+      background: #ffffff;
+      display: block;
+    }
+    .advisor-qr-box span {
+      font-size: 12px;
+      font-weight: 700;
+      color: #e0f2fe;
+      white-space: nowrap;
+    }
+    .advisor-fab {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 90;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 18px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #0ea5e9, #4f46e5);
+      color: #ffffff;
+      font-size: 13.5px;
+      font-weight: 700;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      box-shadow: 0 12px 28px rgba(14, 165, 233, 0.42);
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+    .advisor-fab:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 34px rgba(14, 165, 233, 0.58);
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border-subtle);
@@ -470,6 +542,7 @@
 
     @media (max-width: 920px) {
       .bento-grid, .steps-grid, .trust-banner, .playbooks-grid { grid-template-columns: 1fr; }
+      .advisor-banner { flex-direction: column; text-align: center; }
       .nav-links { display: none; }
       .showcase-img-wrap { aspect-ratio: auto; }
     }
@@ -485,7 +558,7 @@
       <a href="#" class="brand">
         <img src="./images/logo.png" alt="Hyperion Logo" />
         <span>Hyperion</span>
-        <span class="brand-tag" id="nav-ver">v0.0.1</span>
+        <span class="brand-tag" id="nav-ver">v0.0.2</span>
       </a>
       <nav class="nav-links">
         <a href="#showcase" data-zh="实机预览" data-en="Live Tour">实机预览</a>
@@ -685,9 +758,24 @@
             </ul>
           </div>
           <div>
-            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
-               data-zh="查看海外独享 Mac 部署方案与交流入口 →" data-en="View Dedicated Mac Workstation Guide &amp; Discussion →">查看海外独享 Mac 部署方案与交流入口 →</a>
+            <a class="playbook-link" href="#advisor"
+               data-zh="扫码添加企业微信顾问咨询部署方案 →" data-en="Contact Engineering Advisor via WeCom →">扫码添加企业微信顾问咨询部署方案 →</a>
           </div>
+        </div>
+      </div>
+
+      <div class="advisor-banner" id="advisor">
+        <div class="advisor-copy">
+          <span class="playbook-tag" data-zh="💬 1对1 技术顾问对接 · 企业微信直连" data-en="💬 1-on-1 Engineering Advisor · WeCom">💬 1对1 技术顾问对接 · 企业微信直连</span>
+          <h3 data-zh="需要海外独享物理 Mac 工作站或多账号配额方案？" data-en="Need a Dedicated Cloud Mac Workstation or Multi-Account Quota Setup?">需要海外独享物理 Mac 工作站或多账号配额方案？</h3>
+          <p data-zh="直接使用手机微信扫描右侧二维码即可添加技术顾问企业微信（免验证秒通过），一对一咨询一人一机海外原生固定网络 Mac mini (M4) 7×24h 稳跑 Claude 方案与 Claude / Codex 多档位算力规划。"
+             data-en="Scan the QR code with WeChat to connect directly with our engineering advisor for dedicated overseas Apple Silicon workstations and multi-account quota planning.">
+            直接使用手机微信扫描右侧二维码即可添加技术顾问企业微信（免验证秒通过），一对一咨询一人一机海外原生固定网络 Mac mini (M4) 7×24h 稳跑 Claude 方案与 Claude / Codex 多档位算力规划。
+          </p>
+        </div>
+        <div class="advisor-qr-box">
+          <img src="./images/wecom-qr.png" alt="企业微信技术顾问二维码" />
+          <span data-zh="微信扫一扫 · 添加顾问" data-en="Scan with WeChat">微信扫一扫 · 添加顾问</span>
         </div>
       </div>
     </section>
@@ -778,6 +866,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Accept-Release.ps1
       </div>
     </div>
   </footer>
+
+  <a class="advisor-fab" href="#advisor">
+    <span data-zh="💬 微信扫码联系顾问" data-en="💬 Contact Advisor">💬 微信扫码联系顾问</span>
+  </a>
 
   <script>
     (function () {
