@@ -6,7 +6,7 @@
 
   <p>
     <a href="https://thalesnottychus.github.io/Hyperion/"><img src="https://img.shields.io/badge/%F0%9F%8C%90_%E5%AE%98%E6%96%B9%E7%BD%91%E7%AB%99-%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-6366F1?style=for-the-badge" alt="官方网站" /></a>
-    <a href="https://github.com/ThalesNotTychus/Hyperion/discussions/2"><img src="https://img.shields.io/badge/%E2%9A%A1_%E5%AE%9E%E6%88%98%E6%96%B9%E6%A1%88-%E5%A4%9A%E5%8F%B7%E6%8E%A5%E5%8A%9B_%26_%E6%B5%B7%E5%A4%96Mac%E7%A8%B3%E8%B7%91Claude-0EA5E9?style=for-the-badge" alt="多号接力与海外Mac稳跑Claude方案" /></a>
+    <a href="https://github.com/ThalesNotTychus/Hyperion/discussions"><img src="https://img.shields.io/badge/%F0%9F%92%AC_%E5%BC%80%E5%8F%91%E8%80%85%E7%A4%BE%E5%8C%BA-%E5%AE%9E%E6%88%98%E6%8C%87%E5%8D%97-0EA5E9?style=for-the-badge" alt="开发者社区与实战指南" /></a>
     <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_%E7%AB%8B%E5%8D%B3%E4%B8%8B%E8%BD%BD_v0.0.2-%E5%85%8D%E5%AE%89%E8%A3%85%E4%BE%BF%E6%90%BA%E7%89%88-10B981?style=for-the-badge" alt="下载便携版" /></a>
     <a href="README.md"><img src="https://img.shields.io/badge/English-Documentation-334155?style=for-the-badge" alt="English" /></a>
   </p>
@@ -67,19 +67,21 @@
 
 ---
 
-## ⚡ 进阶实战指南（多号防限流 & 海外独享 Mac 稳跑 Claude 方案）
+## 💬 进阶工作流指南与开发者社区
 
-针对重度使用 **Claude Pro / Max、Claude Code、Claude Desktop (Cowork / MCP)** 与 **Codex** 时的常见瓶颈，社区讨论区已整理置顶实战指南：
+我们在 [**GitHub Discussions 讨论区**](https://github.com/ThalesNotTychus/Hyperion/discussions) 整理了重度多智能体开发常见的工程实践：
 
 - 🔋 **[多账号池 `429` 无感接力配置与梯度配额规划](https://github.com/ThalesNotTychus/Hyperion/discussions/2)**：利用进程级目录隔离组网多订阅号 + 按量 API 兜底，逼近 92% 阈值自动无缝换号续跑长程任务。
-- 🖥️ **[海外独享物理 Mac mini 云工作站：7×24h 稳定运行 Claude 方案](https://github.com/ThalesNotTychus/Hyperion/discussions/2)**：告别本地网络波动伤号与关机断连，一人一机海外原生固定网络环境全天候运行长程 Agent 编排与跨端编译。
-- 💬 **[加入官方开发者社区与功能许愿池](https://github.com/ThalesNotTychus/Hyperion/discussions/1)**：反馈需求、交流多智能体工作流与获取算力环境配置建议。
+- 🖥️ **[远端 Mac mini (M4) 云工作站：7×24h 常驻运行 Agent 与跨端构建方案](https://github.com/ThalesNotTychus/Hyperion/discussions/2)**：在独立 Apple Silicon 物理主机上全天候常驻运行长程 Agent 编排、MCP 服务与 iOS/macOS 编译。
+- 💡 **[版本路线图与功能许愿池](https://github.com/ThalesNotTychus/Hyperion/discussions/1)**：反馈需求、提交新 CLI 适配建议与分享多模型协作技巧。
 
-<p align="center">
-  <a href="https://thalesnottychus.github.io/Hyperion/#advisor">
-    <img src="docs/images/advisor-contact.png" alt="微信扫码添加企业微信技术顾问 · 海外独享 Mac 工作站与多账号算力配置咨询" width="100%" />
-  </a>
-</p>
+<details>
+  <summary><strong>📮 微信扫码联系作者 / 开发者一对一交流（点击展开）</strong></summary>
+  <br/>
+  <p align="center">
+    <img src="docs/images/advisor-contact.png" alt="Hyperion 开源项目 · 作者与开发者交流" width="92%" />
+  </p>
+</details>
 
 ---
 

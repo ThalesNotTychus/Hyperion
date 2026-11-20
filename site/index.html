@@ -563,7 +563,7 @@
       <nav class="nav-links">
         <a href="#showcase" data-zh="实机预览" data-en="Live Tour">实机预览</a>
         <a href="#features" data-zh="核心能力" data-en="Capabilities">核心能力</a>
-        <a href="#playbooks" data-zh="⚡ 算力与远端 Mac 方案" data-en="⚡ Playbooks">⚡ 算力与远端 Mac 方案</a>
+        <a href="#playbooks" data-zh="⚡ 工作流指南" data-en="⚡ Workflows">⚡ 工作流指南</a>
         <a href="#quick-start" data-zh="快速上手" data-en="Quick Start">快速上手</a>
         <a href="https://github.com/ThalesNotTychus/Hyperion/discussions" target="_blank" rel="noopener" data-zh="💬 社区讨论区 ↗" data-en="💬 Community ↗">💬 社区讨论区 ↗</a>
       </nav>
@@ -714,68 +714,68 @@
     <!-- High-Throughput Engineering Playbooks (Funnel Hub) -->
     <section class="section" id="playbooks">
       <div class="sec-head">
-        <div class="sec-eyebrow">ENGINEERING PLAYBOOKS</div>
-        <h2 data-zh="重度 AI 研发的算力规划与全天候远端工作站方案" data-en="High-Throughput Quota Planning &amp; 24/7 Cloud Mac Workflows">重度 AI 研发的算力规划与全天候远端工作站方案</h2>
-        <p data-zh="针对高频使用 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与环境稳定性痛点，社区沉淀了两套成熟工程实践。"
-           data-en="Proven engineering playbooks for uninterrupted multi-account failover and 24/7 dedicated macOS cloud workstations.">
-          针对高频使用 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与环境稳定性痛点，社区沉淀了两套成熟工程实践。
+        <div class="sec-eyebrow">WORKFLOW GUIDES &amp; COMMUNITY</div>
+        <h2 data-zh="重度多智能体工作流与全天候远端构建实践" data-en="Multi-Agent Quota Failover &amp; 24/7 Remote Mac Workflows">重度多智能体工作流与全天候远端构建实践</h2>
+        <p data-zh="针对高频运行 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与长程任务常驻需求，社区沉淀了两套工程实践。"
+           data-en="Community-tested engineering guides for uninterrupted multi-account failover and 24/7 dedicated macOS build hosts.">
+          针对高频运行 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与长程任务常驻需求，社区沉淀了两套工程实践。
         </p>
       </div>
 
       <div class="playbooks-grid">
         <div class="playbook-card">
           <div>
-            <span class="playbook-tag" data-zh="⚡ 方案一 · 本地多号与配额轮换" data-en="⚡ Playbook 01 · Multi-Account Failover">⚡ 方案一 · 本地多号与配额轮换</span>
+            <span class="playbook-tag" data-zh="⚡ 指南一 · 多号配额轮换" data-en="⚡ Guide 01 · Multi-Account Failover">⚡ 指南一 · 多号配额轮换</span>
             <h3 data-zh="多订阅池 429 无感接力与梯度配额组网" data-en="Multi-Subscription Pool &amp; Seamless 429 Failover">多订阅池 429 无感接力与梯度配额组网</h3>
-            <p data-zh="单一 Plus / Pro 订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。"
+            <p data-zh="单一订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。"
                data-en="Single subscriptions frequently hit 5-hour rate windows during large refactors. Combine isolated Codex / Claude profiles with fallback APIs for zero-downtime execution.">
-              单一 Plus / Pro 订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。
+              单一订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。
             </p>
             <ul class="playbook-bullets">
-              <li data-zh="Codex / Claude 多档位独立订阅配额对比与选型建议" data-en="Quota planning across Plus, Pro &amp; Max subscription tiers">Codex / Claude 多档位独立订阅配额对比与选型建议</li>
+              <li data-zh="多档位独立订阅配额对比与选型经验" data-en="Quota planning across subscription tiers &amp; APIs">多档位独立订阅配额对比与选型经验</li>
               <li data-zh="进程级独立配置目录绑定与 429 自动接力参数调优" data-en="Per-process directory isolation &amp; 92% auto-failover tuning">进程级独立配置目录绑定与 429 自动接力参数调优</li>
-              <li data-zh="主力订阅 + 按量 API 混合赛马的高性价比省额度打法" data-en="Hybrid subscription + pay-as-you-go API Arena strategy">主力订阅 + 按量 API 混合赛马的高性价比省额度打法</li>
+              <li data-zh="主力订阅 + 按量 API 混合赛马的高性价比打法" data-en="Hybrid subscription + pay-as-you-go API Arena strategy">主力订阅 + 按量 API 混合赛马的高性价比打法</li>
             </ul>
           </div>
           <div>
             <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
-               data-zh="阅读多号配额规划与接力实战指南 →" data-en="Read Multi-Account Failover Playbook →">阅读多号配额规划与接力实战指南 →</a>
+               data-zh="阅读多号配额规划与接力指南 →" data-en="Read Multi-Account Failover Guide →">阅读多号配额规划与接力指南 →</a>
           </div>
         </div>
 
         <div class="playbook-card">
           <div>
-            <span class="playbook-tag" data-zh="🖥️ 方案二 · 远端纯净物理算力" data-en="🖥️ Playbook 02 · Dedicated Cloud Mac">🖥️ 方案二 · 远端纯净物理算力</span>
-            <h3 data-zh="海外独享物理 Mac mini 云工作站 · 7×24h 稳跑 Claude" data-en="Dedicated Overseas Mac mini · 24/7 Stable Claude Code">海外独享物理 Mac mini 云工作站 · 7×24h 稳跑 Claude</h3>
-            <p data-zh="重度使用 Claude Pro / Max、Claude Code 与 Claude Desktop 时，本地网络波动易影响会话与账号稳定性，且本地关机会中断通宵长程任务。采用一人一机海外原生固定网络物理 Mac mini (M4)，开机即享全天候纯净研发环境。"
-               data-en="Eliminate local network instability and overnight sleep interruptions by running Claude Code &amp; Desktop 24/7 on a dedicated physical Mac mini (M4) workstation.">
-              重度使用 Claude Pro / Max、Claude Code 与 Claude Desktop 时，本地网络波动易影响会话与账号稳定性，且本地关机会中断通宵长程任务。采用一人一机海外原生固定网络物理 Mac mini (M4)，开机即享全天候纯净研发环境。
+            <span class="playbook-tag" data-zh="🖥️ 指南二 · 7×24h 远端主机" data-en="🖥️ Guide 02 · Dedicated Remote Mac">🖥️ 指南二 · 7×24h 远端主机</span>
+            <h3 data-zh="远端物理 Mac mini (M4) · 7×24h 常驻 Agent 与编译工作站" data-en="Dedicated Mac mini (M4) · 24/7 Always-On Agent Workflows">远端物理 Mac mini (M4) · 7×24h 常驻 Agent 与编译工作站</h3>
+            <p data-zh="跑通宵长程重构任务（/goal、多子智能体编排、定时自动化）或跨端 iOS/macOS 构建时，本地开发机休眠或网络抖动容易导致会话中断。采用独立物理 Mac mini (M4) 云端常驻环境可实现全天候不间断运行。"
+               data-en="Keep long-horizon agent loops, MCP servers, and Xcode builds running 24/7 without local sleep or connectivity interruptions on dedicated Apple Silicon hardware.">
+              跑通宵长程重构任务（/goal、多子智能体编排、定时自动化）或跨端 iOS/macOS 构建时，本地开发机休眠或网络抖动容易导致会话中断。采用独立物理 Mac mini (M4) 云端常驻环境可实现全天候不间断运行。
             </p>
             <ul class="playbook-bullets">
-              <li data-zh="一人一机物理硬件隔离 + 海外原生固定网络环境，告别波动断连" data-en="1-tenant dedicated Apple Silicon hardware &amp; static native network">一人一机物理硬件隔离 + 海外原生固定网络环境，告别波动断连</li>
-              <li data-zh="7×24h 不关机常驻运行长程 Agent 编排、MCP 服务与 iOS 编译" data-en="24/7 always-on execution for long-horizon agents, MCP &amp; Xcode builds">7×24h 不关机常驻运行长程 Agent 编排、MCP 服务与 iOS 编译</li>
-              <li data-zh="Windows 本地低延迟远程桌面 / SSH 无缝连入，即开即用" data-en="Low-latency Parsec / RustDesk / SSH access directly from Windows">Windows 本地低延迟远程桌面 / SSH 无缝连入，即开即用</li>
+              <li data-zh="独立物理 Apple Silicon 硬件隔离与固定稳定环境" data-en="Dedicated physical Apple Silicon hardware &amp; consistent environment">独立物理 Apple Silicon 硬件隔离与固定稳定环境</li>
+              <li data-zh="7×24h 不关机常驻运行 Claude Code、MCP 服务与 Xcode 构建" data-en="24/7 always-on execution for Claude Code, MCP &amp; Xcode builds">7×24h 不关机常驻运行 Claude Code、MCP 服务与 Xcode 构建</li>
+              <li data-zh="Windows 本地低延迟远程桌面 / SSH 无缝连入协同开发" data-en="Low-latency Parsec / RustDesk / SSH access from Windows">Windows 本地低延迟远程桌面 / SSH 无缝连入协同开发</li>
             </ul>
           </div>
           <div>
-            <a class="playbook-link" href="#advisor"
-               data-zh="扫码添加企业微信顾问咨询部署方案 →" data-en="Contact Engineering Advisor via WeCom →">扫码添加企业微信顾问咨询部署方案 →</a>
+            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
+               data-zh="查看远端 Mac 常驻环境配置指南 →" data-en="Read Remote Mac Setup Guide →">查看远端 Mac 常驻环境配置指南 →</a>
           </div>
         </div>
       </div>
 
       <div class="advisor-banner" id="advisor">
         <div class="advisor-copy">
-          <span class="playbook-tag" data-zh="💬 1对1 技术顾问对接 · 企业微信直连" data-en="💬 1-on-1 Engineering Advisor · WeCom">💬 1对1 技术顾问对接 · 企业微信直连</span>
-          <h3 data-zh="需要海外独享物理 Mac 工作站或多账号配额方案？" data-en="Need a Dedicated Cloud Mac Workstation or Multi-Account Quota Setup?">需要海外独享物理 Mac 工作站或多账号配额方案？</h3>
-          <p data-zh="直接使用手机微信扫描右侧二维码即可添加技术顾问企业微信（免验证秒通过），一对一咨询一人一机海外原生固定网络 Mac mini (M4) 7×24h 稳跑 Claude 方案与 Claude / Codex 多档位算力规划。"
-             data-en="Scan the QR code with WeChat to connect directly with our engineering advisor for dedicated overseas Apple Silicon workstations and multi-account quota planning.">
-            直接使用手机微信扫描右侧二维码即可添加技术顾问企业微信（免验证秒通过），一对一咨询一人一机海外原生固定网络 Mac mini (M4) 7×24h 稳跑 Claude 方案与 Claude / Codex 多档位算力规划。
+          <span class="playbook-tag" data-zh="💬 开发者交流 · 联系作者" data-en="💬 Developer Community · Contact Author">💬 开发者交流 · 联系作者</span>
+          <h3 data-zh="工作流交流、问题反馈与远端开发环境探讨" data-en="Workflow Feedback, CLI Suggestions &amp; Setup Discussions">工作流交流、问题反馈与远端开发环境探讨</h3>
+          <p data-zh="在使用 Hyperion 过程中遇到任何兼容性问题、希望许愿新功能，或想交流多账号防限流调优与 7×24h 远端 Mac 开发环境搭建方案，欢迎在 GitHub Discussions 留言，或直接用微信扫描右侧二维码联系作者 Thales。"
+             data-en="Have feedback, feature requests, or questions about multi-account quota setups and 24/7 remote Mac workflows? Open a thread on GitHub Discussions or scan via WeChat to connect with the author.">
+            在使用 Hyperion 过程中遇到任何兼容性问题、希望许愿新功能，或想交流多账号防限流调优与 7×24h 远端 Mac 开发环境搭建方案，欢迎在 GitHub Discussions 留言，或直接用微信扫描右侧二维码联系作者 Thales。
           </p>
         </div>
         <div class="advisor-qr-box">
-          <img src="./images/wecom-qr.png" alt="企业微信技术顾问二维码" />
-          <span data-zh="微信扫一扫 · 添加顾问" data-en="Scan with WeChat">微信扫一扫 · 添加顾问</span>
+          <img src="./images/wecom-qr.png" alt="作者企业微信二维码" />
+          <span data-zh="微信扫码 · 联系作者" data-en="Scan via WeChat">微信扫码 · 联系作者</span>
         </div>
       </div>
     </section>
@@ -866,10 +866,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Accept-Release.ps1
       </div>
     </div>
   </footer>
-
-  <a class="advisor-fab" href="#advisor">
-    <span data-zh="💬 微信扫码联系顾问" data-en="💬 Contact Advisor">💬 微信扫码联系顾问</span>
-  </a>
 
   <script>
     (function () {

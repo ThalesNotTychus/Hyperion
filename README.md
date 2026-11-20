@@ -7,7 +7,7 @@
   <p>
     <a href="https://thalesnottychus.github.io/Hyperion/"><img src="https://img.shields.io/badge/%F0%9F%8C%90_Official_Website-Live_Portal-6366F1?style=for-the-badge" alt="Official Website" /></a>
     <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/%F0%9F%87%A8%F0%9F%87%B3_%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E7%82%B9%E5%87%BB%E5%88%87%E6%8D%A2%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-0EA5E9?style=for-the-badge" alt="简体中文文档" /></a>
-    <a href="https://github.com/ThalesNotTychus/Hyperion/discussions/2"><img src="https://img.shields.io/badge/%E2%9A%A1_Playbooks-429_Failover_%26_24%2F7_Cloud_Mac-F59E0B?style=for-the-badge" alt="Engineering Playbooks" /></a>
+    <a href="https://github.com/ThalesNotTychus/Hyperion/discussions"><img src="https://img.shields.io/badge/%F0%9F%92%AC_Community-Guides_%26_Discussions-F59E0B?style=for-the-badge" alt="Community & Guides" /></a>
     <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_v0.0.2-Portable_Win_x64-10B981?style=for-the-badge" alt="Download Portable Release" /></a>
   </p>
 
@@ -89,13 +89,13 @@ Heavy AI developers routinely juggle multiple subscriptions and APIs (**Codex**,
 
 ---
 
-## ⚡ Engineering Playbooks & Community Hub
+## 💬 Workflow Guides & Developer Community
 
-Explore proven high-throughput workflows shared in our [**GitHub Discussions**](https://github.com/ThalesNotTychus/Hyperion/discussions):
+Explore practical multi-agent engineering setups in [**GitHub Discussions**](https://github.com/ThalesNotTychus/Hyperion/discussions):
 
-- 🔋 **[Multi-Account `429` Auto-Failover & Quota Planning Strategy](https://github.com/ThalesNotTychus/Hyperion/discussions/2)** — Combine isolated Codex / Claude profiles with pay-as-you-go fallback APIs for uninterrupted long-horizon coding.
-- 🖥️ **[Dedicated Overseas Mac mini Cloud Workstation · 24/7 Stable Claude Code & Desktop](https://github.com/ThalesNotTychus/Hyperion/discussions/2)** — Eliminate local network instability and sleep interruptions on dedicated physical Apple Silicon environments.
-- 💬 **[Official Roadmap & Feature Requests](https://github.com/ThalesNotTychus/Hyperion/discussions/1)** — Share workflows, request new CLI adapters, or discuss multi-agent setups.
+- 🔋 **[Multi-Account `429` Auto-Failover & Quota Planning Guide](https://github.com/ThalesNotTychus/Hyperion/discussions/2)** — Combine isolated CLI profiles with fallback APIs for uninterrupted long-horizon coding.
+- 🖥️ **[Dedicated Remote Mac mini (M4) · 24/7 Always-On Agent & Build Workflows](https://github.com/ThalesNotTychus/Hyperion/discussions/2)** — Run long-horizon coding agents, MCP servers, and Xcode builds continuously on dedicated Apple Silicon hardware.
+- 💡 **[Official Roadmap & Feature Requests](https://github.com/ThalesNotTychus/Hyperion/discussions/1)** — Share workflows, request new CLI adapters, or discuss multi-agent setups.
 
 ---
 
