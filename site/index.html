@@ -385,6 +385,78 @@
     .trust-item h4 { font-size: 14.5px; font-weight: 700; color: #ecfdf5; margin-bottom: 4px; display: flex; align-items: center; gap: 7px; }
     .trust-item p { font-size: 13px; color: var(--text-secondary); }
 
+    /* Playbooks Spotlight */
+    .playbooks-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 22px;
+    }
+    .playbook-card {
+      position: relative;
+      background: linear-gradient(155deg, rgba(20, 30, 56, 0.92), rgba(11, 17, 34, 0.96));
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 18px;
+      padding: 28px 28px 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 18px;
+      box-shadow: 0 18px 40px -20px rgba(14, 165, 233, 0.35);
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+    .playbook-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.55);
+    }
+    .playbook-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      padding: 4px 11px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    .playbook-card h3 {
+      font-size: 19px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 10px;
+      line-height: 1.35;
+    }
+    .playbook-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+    .playbook-bullets {
+      list-style: none;
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 13.5px;
+      color: #cbd5e1;
+    }
+    .playbook-bullets li::before {
+      content: "✦ ";
+      color: var(--accent-cyan);
+      font-weight: 700;
+    }
+    .playbook-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+    .playbook-link:hover { color: #7dd3fc; }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border-subtle);
@@ -397,7 +469,7 @@
     .foot-links a:hover { color: var(--text-primary); }
 
     @media (max-width: 920px) {
-      .bento-grid, .steps-grid, .trust-banner { grid-template-columns: 1fr; }
+      .bento-grid, .steps-grid, .trust-banner, .playbooks-grid { grid-template-columns: 1fr; }
       .nav-links { display: none; }
       .showcase-img-wrap { aspect-ratio: auto; }
     }
@@ -418,9 +490,9 @@
       <nav class="nav-links">
         <a href="#showcase" data-zh="实机预览" data-en="Live Tour">实机预览</a>
         <a href="#features" data-zh="核心能力" data-en="Capabilities">核心能力</a>
+        <a href="#playbooks" data-zh="⚡ 算力与远端 Mac 方案" data-en="⚡ Playbooks">⚡ 算力与远端 Mac 方案</a>
         <a href="#quick-start" data-zh="快速上手" data-en="Quick Start">快速上手</a>
-        <a href="#security" data-zh="安全设计" data-en="Security">安全设计</a>
-        <a href="https://github.com/ThalesNotTychus/Hyperion/discussions" target="_blank" rel="noopener" data-zh="💬 社区与进阶指南 ↗" data-en="💬 Community &amp; Guides ↗">💬 社区与进阶指南 ↗</a>
+        <a href="https://github.com/ThalesNotTychus/Hyperion/discussions" target="_blank" rel="noopener" data-zh="💬 社区讨论区 ↗" data-en="💬 Community ↗">💬 社区讨论区 ↗</a>
       </nav>
       <div class="nav-actions">
         <button class="btn lang-btn" id="btn-lang" type="button">EN</button>
@@ -562,6 +634,60 @@
              data-en="Preview live web apps side-by-side and click any DOM node to attach its selector, CSS &amp; screenshot to your prompt, paired with an embedded Windows ConPTY terminal.">
             分屏实时预览本地前端页面，点选任意 DOM 元素即可自动提取选择器、计算样式与视口截图带入对话；底部内嵌 Windows 原生伪终端，支持四套皮肤与中英双语。
           </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- High-Throughput Engineering Playbooks (Funnel Hub) -->
+    <section class="section" id="playbooks">
+      <div class="sec-head">
+        <div class="sec-eyebrow">ENGINEERING PLAYBOOKS</div>
+        <h2 data-zh="重度 AI 研发的算力规划与全天候远端工作站方案" data-en="High-Throughput Quota Planning &amp; 24/7 Cloud Mac Workflows">重度 AI 研发的算力规划与全天候远端工作站方案</h2>
+        <p data-zh="针对高频使用 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与环境稳定性痛点，社区沉淀了两套成熟工程实践。"
+           data-en="Proven engineering playbooks for uninterrupted multi-account failover and 24/7 dedicated macOS cloud workstations.">
+          针对高频使用 Claude Code、Claude Desktop (Cowork / MCP) 与 Codex 时的限流中断与环境稳定性痛点，社区沉淀了两套成熟工程实践。
+        </p>
+      </div>
+
+      <div class="playbooks-grid">
+        <div class="playbook-card">
+          <div>
+            <span class="playbook-tag" data-zh="⚡ 方案一 · 本地多号与配额轮换" data-en="⚡ Playbook 01 · Multi-Account Failover">⚡ 方案一 · 本地多号与配额轮换</span>
+            <h3 data-zh="多订阅池 429 无感接力与梯度配额组网" data-en="Multi-Subscription Pool &amp; Seamless 429 Failover">多订阅池 429 无感接力与梯度配额组网</h3>
+            <p data-zh="单一 Plus / Pro 订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。"
+               data-en="Single subscriptions frequently hit 5-hour rate windows during large refactors. Combine isolated Codex / Claude profiles with fallback APIs for zero-downtime execution.">
+              单一 Plus / Pro 订阅跑长程架构重构或并发测试时极易撞上 5 小时窗口限流。通过 Hyperion 进程级目录隔离组网多账号算力池，在主号逼近 92% 阈值时自动折跃至健康备用号继续执行。
+            </p>
+            <ul class="playbook-bullets">
+              <li data-zh="Codex / Claude 多档位独立订阅配额对比与选型建议" data-en="Quota planning across Plus, Pro &amp; Max subscription tiers">Codex / Claude 多档位独立订阅配额对比与选型建议</li>
+              <li data-zh="进程级独立配置目录绑定与 429 自动接力参数调优" data-en="Per-process directory isolation &amp; 92% auto-failover tuning">进程级独立配置目录绑定与 429 自动接力参数调优</li>
+              <li data-zh="主力订阅 + 按量 API 混合赛马的高性价比省额度打法" data-en="Hybrid subscription + pay-as-you-go API Arena strategy">主力订阅 + 按量 API 混合赛马的高性价比省额度打法</li>
+            </ul>
+          </div>
+          <div>
+            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
+               data-zh="阅读多号配额规划与接力实战指南 →" data-en="Read Multi-Account Failover Playbook →">阅读多号配额规划与接力实战指南 →</a>
+          </div>
+        </div>
+
+        <div class="playbook-card">
+          <div>
+            <span class="playbook-tag" data-zh="🖥️ 方案二 · 远端纯净物理算力" data-en="🖥️ Playbook 02 · Dedicated Cloud Mac">🖥️ 方案二 · 远端纯净物理算力</span>
+            <h3 data-zh="海外独享物理 Mac mini 云工作站 · 7×24h 稳跑 Claude" data-en="Dedicated Overseas Mac mini · 24/7 Stable Claude Code">海外独享物理 Mac mini 云工作站 · 7×24h 稳跑 Claude</h3>
+            <p data-zh="重度使用 Claude Pro / Max、Claude Code 与 Claude Desktop 时，本地网络波动易影响会话与账号稳定性，且本地关机会中断通宵长程任务。采用一人一机海外原生固定网络物理 Mac mini (M4)，开机即享全天候纯净研发环境。"
+               data-en="Eliminate local network instability and overnight sleep interruptions by running Claude Code &amp; Desktop 24/7 on a dedicated physical Mac mini (M4) workstation.">
+              重度使用 Claude Pro / Max、Claude Code 与 Claude Desktop 时，本地网络波动易影响会话与账号稳定性，且本地关机会中断通宵长程任务。采用一人一机海外原生固定网络物理 Mac mini (M4)，开机即享全天候纯净研发环境。
+            </p>
+            <ul class="playbook-bullets">
+              <li data-zh="一人一机物理硬件隔离 + 海外原生固定网络环境，告别波动断连" data-en="1-tenant dedicated Apple Silicon hardware &amp; static native network">一人一机物理硬件隔离 + 海外原生固定网络环境，告别波动断连</li>
+              <li data-zh="7×24h 不关机常驻运行长程 Agent 编排、MCP 服务与 iOS 编译" data-en="24/7 always-on execution for long-horizon agents, MCP &amp; Xcode builds">7×24h 不关机常驻运行长程 Agent 编排、MCP 服务与 iOS 编译</li>
+              <li data-zh="Windows 本地低延迟远程桌面 / SSH 无缝连入，即开即用" data-en="Low-latency Parsec / RustDesk / SSH access directly from Windows">Windows 本地低延迟远程桌面 / SSH 无缝连入，即开即用</li>
+            </ul>
+          </div>
+          <div>
+            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
+               data-zh="查看海外独享 Mac 部署方案与交流入口 →" data-en="View Dedicated Mac Workstation Guide &amp; Discussion →">查看海外独享 Mac 部署方案与交流入口 →</a>
+          </div>
         </div>
       </div>
     </section>

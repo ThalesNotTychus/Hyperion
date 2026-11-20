@@ -7,7 +7,7 @@
 
 export const PORTAL_CONFIG = {
   websiteUrl: "https://thalesnottychus.github.io/Hyperion/",
-  apiGuideUrl: "https://thalesnottychus.github.io/Hyperion/#quick-start",
+  apiGuideUrl: "https://thalesnottychus.github.io/Hyperion/#playbooks",
   showDocsNavButton: true,
   showApiGuideLink: true,
 };
