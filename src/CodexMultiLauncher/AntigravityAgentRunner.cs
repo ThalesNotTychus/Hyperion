@@ -64,7 +64,27 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
+    private static (string? Path, long ExpiresTick) _cachedAgyExe;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool HasAuth, long ExpiresTick)> HomeAuthCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void InvalidateDiscoveryCache()
+    {
+        _cachedAgyExe = default;
+        HomeAuthCache.Clear();
+    }
+
     public static string? TryFindAgyCliExecutable()
+    {
+        var cached = _cachedAgyExe;
+        if (Environment.TickCount64 < cached.ExpiresTick && (cached.Path is null || File.Exists(cached.Path)))
+            return cached.Path;
+
+        var resolved = TryFindAgyCliExecutableCore();
+        _cachedAgyExe = (resolved, Environment.TickCount64 + 30_000);
+        return resolved;
+    }
+
+    private static string? TryFindAgyCliExecutableCore()
     {
         var candidates = new List<string>();
 
@@ -209,6 +229,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
                     throw new InvalidOperationException("官方 `agy.exe` 下载文件 SHA-512 完整性校验未通过，已安全中止部署。");
 
                 File.Move(stagingFile, targetFile, overwrite: true);
+                InvalidateDiscoveryCache();
 
                 try
                 {
@@ -256,12 +277,22 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         try
         {
             var fullHome = Path.GetFullPath(homeRoot);
+            if (HomeAuthCache.TryGetValue(fullHome, out var cached) && cached.HasAuth && Environment.TickCount64 < cached.ExpiresTick && Directory.Exists(fullHome))
+            {
+                return new AntigravityHomeInspection(true, hasCli);
+            }
+
             var cliConfigDir = Path.Combine(fullHome, ".gemini", "antigravity-cli");
             var geminiRoot = Path.Combine(fullHome, ".gemini", "antigravity");
 
             var hasCliConfig = Directory.Exists(cliConfigDir) && Directory.EnumerateFileSystemEntries(cliConfigDir).Any();
             var hasGeminiState = Directory.Exists(geminiRoot) && Directory.EnumerateFileSystemEntries(geminiRoot).Any();
-            return new AntigravityHomeInspection(hasCliConfig || hasGeminiState, hasCli);
+            var hasAuth = hasCliConfig || hasGeminiState;
+            if (hasAuth)
+                HomeAuthCache[fullHome] = (true, Environment.TickCount64 + 10_000);
+            else
+                HomeAuthCache.TryRemove(fullHome, out _);
+            return new AntigravityHomeInspection(hasAuth, hasCli);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -725,7 +756,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
             request.Agent.ReasoningEffort,
             budget.Token).ConfigureAwait(false);
 
-        return await connection.PromptAndStreamAsync(sessionId!, request.Prompt, budget.Token).ConfigureAwait(false);
+        return await connection.PromptAndStreamAsync(sessionId!, request.Prompt, request.Attachments, budget.Token).ConfigureAwait(false);
     }
 
     internal static async Task WriteJsonRpcMessageAsync(Stream output, string json, CancellationToken token)
@@ -1072,7 +1103,11 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
             return null;
         }
 
-        public async Task<string> PromptAndStreamAsync(string sessionId, string promptText, CancellationToken token)
+        public async Task<string> PromptAndStreamAsync(
+            string sessionId,
+            string promptText,
+            IReadOnlyList<ChatImageAttachment>? attachments,
+            CancellationToken token)
         {
             _activeSessionId = sessionId;
             _steps.Clear();
@@ -1085,13 +1120,25 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
                 _ = SendNotificationFireAndForgetAsync("session/cancel", new { sessionId });
             });
 
+            var promptBlocks = new List<object> { new { type = "text", text = promptText } };
+            if (attachments is { Count: > 0 })
+            {
+                foreach (var att in attachments)
+                {
+                    if (string.IsNullOrWhiteSpace(att.Base64Data)) continue;
+                    promptBlocks.Add(new
+                    {
+                        type = "image",
+                        mimeType = string.IsNullOrWhiteSpace(att.MimeType) ? "image/png" : att.MimeType,
+                        data = att.Base64Data,
+                    });
+                }
+            }
+
             using var resp = await SendRequestAsync("session/prompt", new
             {
                 sessionId,
-                prompt = new[]
-                {
-                    new { type = "text", text = promptText },
-                },
+                prompt = promptBlocks,
             }, token).ConfigureAwait(false);
 
             if (resp.RootElement.TryGetProperty("usage", out var usageEl) && usageEl.ValueKind == JsonValueKind.Object)

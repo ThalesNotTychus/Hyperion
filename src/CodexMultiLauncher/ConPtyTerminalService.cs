@@ -391,6 +391,23 @@ public sealed class ConPtyTerminalService : IDisposable
             var byteBuf = new byte[8192];
             var charBuf = new char[8192];
             var decoder = Encoding.UTF8.GetDecoder();
+            var pendingLock = new object();
+            var pendingBuffer = new StringBuilder();
+            var flushScheduled = false;
+
+            void FlushPending()
+            {
+                string chunk;
+                lock (pendingLock)
+                {
+                    flushScheduled = false;
+                    if (pendingBuffer.Length == 0) return;
+                    chunk = pendingBuffer.ToString();
+                    pendingBuffer.Clear();
+                }
+                try { onOutput(chunk); } catch { }
+            }
+
             try
             {
                 while (!_disposed && _stdoutStream is { } stream)
@@ -398,8 +415,36 @@ public sealed class ConPtyTerminalService : IDisposable
                     var read = stream.Read(byteBuf, 0, byteBuf.Length);
                     if (read <= 0) break;
                     var chars = decoder.GetChars(byteBuf, 0, read, charBuf, 0, flush: false);
-                    if (chars > 0)
-                        onOutput(new string(charBuf, 0, chars));
+                    if (chars <= 0) continue;
+
+                    var flushImmediately = false;
+                    var scheduleTimer = false;
+                    lock (pendingLock)
+                    {
+                        pendingBuffer.Append(charBuf, 0, chars);
+                        if (pendingBuffer.Length >= 24_576)
+                        {
+                            flushImmediately = true;
+                        }
+                        else if (!flushScheduled)
+                        {
+                            flushScheduled = true;
+                            scheduleTimer = true;
+                        }
+                    }
+
+                    if (flushImmediately)
+                    {
+                        FlushPending();
+                    }
+                    else if (scheduleTimer)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(12).ConfigureAwait(false);
+                            FlushPending();
+                        });
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException)
@@ -407,6 +452,7 @@ public sealed class ConPtyTerminalService : IDisposable
             }
             finally
             {
+                FlushPending();
                 _alive = false;
                 int exitCode = 0;
                 lock (_sync)
@@ -429,12 +475,17 @@ public sealed class ConPtyTerminalService : IDisposable
                 try { _stdinStream?.Dispose(); } catch { }
                 _stdinStream = null;
 
-                try
+                // Verify the owned native process handle is still active (STILL_ACTIVE == 259) before killing by PID, preventing PID-reuse kills.
+                var stillRunning = _hProcess != IntPtr.Zero && GetExitCodeProcess(_hProcess, out var nativeCode) && nativeCode == 259u;
+                if (stillRunning)
                 {
-                    using var proc = Process.GetProcessById(_processId);
-                    if (!proc.HasExited) proc.Kill(entireProcessTree: true);
+                    try
+                    {
+                        using var proc = Process.GetProcessById(_processId);
+                        if (!proc.HasExited) proc.Kill(entireProcessTree: true);
+                    }
+                    catch { }
                 }
-                catch { }
 
                 if (_hPc != IntPtr.Zero)
                 {

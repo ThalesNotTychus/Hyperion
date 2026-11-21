@@ -35,19 +35,33 @@ public sealed class CodexAppServerUsageClient : IDisposable
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(12);
     public static readonly TimeSpan ProcessExitTimeout = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(30);
-    // One short-lived query per client; cancellation never poisons a future request.
-    private readonly SemaphoreSlim _requestGate = new(1, 1);
+    // Per-CODEX_HOME semaphore so distinct accounts refresh in parallel while same-home queries stay serialized; cancellation never poisons future requests.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _requestGates = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, CodexUsageSnapshot> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private volatile bool _disposed;
 
-    public void Dispose() => _requestGate.Dispose();
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        foreach (var pair in _requestGates.ToArray())
+        {
+            if (_requestGates.TryRemove(pair.Key, out var gate))
+            {
+                try { gate.Dispose(); } catch (ObjectDisposedException) { }
+            }
+        }
+    }
 
     public Task<CodexUsageSnapshot> ReadAsync(CodexWorkspace workspace, CancellationToken cancellationToken = default) => ReadAsync(workspace, false, cancellationToken);
     public async Task<CodexUsageSnapshot> ReadAsync(CodexWorkspace workspace, bool forceRefresh, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(workspace);
         if (!workspace.CanReadUsage) throw new InvalidOperationException("此工作区没有经过验证的 CODEX_HOME，不能读取用量。");
         var key = Path.GetFullPath(workspace.DataPaths.RequireCodexHome());
-        await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var gate = _requestGates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (!forceRefresh && _cache.TryGetValue(key, out var cached) && DateTimeOffset.UtcNow - cached.RefreshedAtUtc <= CacheLifetime) return cached;
@@ -55,7 +69,7 @@ public sealed class CodexAppServerUsageClient : IDisposable
             _cache[key] = snapshot;
             return snapshot;
         }
-        finally { _requestGate.Release(); }
+        finally { gate.Release(); }
     }
 
     private static async Task<CodexUsageSnapshot> ReadCoreAsync(CodexWorkspace workspace, CancellationToken cancellationToken)
@@ -100,6 +114,12 @@ public sealed record CodexExecutableCandidate(string Path, DateTimeOffset LastWr
 
 public static class CodexExecutableLocator
 {
+    public static string? TryFindCurrentCandidate()
+    {
+        try { return FindCurrentCandidateOrThrow(); }
+        catch (InvalidOperationException) { return null; }
+    }
+
     public static string FindCurrentCandidateOrThrow()
     {
         var roots = new[]

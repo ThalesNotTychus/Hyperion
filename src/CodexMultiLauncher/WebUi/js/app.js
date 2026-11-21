@@ -7,12 +7,14 @@ import { escapeHtml, renderMarkdown } from "./markdown.js";
 import { TerminalManager } from "./terminal.js";
 import { renderDiffFilesHtml } from "./diffView.js";
 import { PORTAL_CONFIG, setUiLanguage, getUiLanguage, installI18nObserver, applyLanguageToRoot } from "./portalConfig.js";
+import { icon } from "./icons.js";
+import { attachVerticalResizer, attachHorizontalResizer } from "./resizer.js";
 
 const THEMES = [
-  { id: "obsidian", label: "深空极客" },
-  { id: "matrix", label: "赛博矩阵" },
-  { id: "daylight", label: "晨雾亮色" },
-  { id: "aurora", label: "极光毛玻璃" },
+  { id: "obsidian", label: "深空极客", swatch: "#6366f1" },
+  { id: "matrix", label: "赛博矩阵", swatch: "#10b981" },
+  { id: "daylight", label: "晨雾亮色", swatch: "#2563eb" },
+  { id: "aurora", label: "极光毛玻璃", swatch: "#8b5cf6" },
 ];
 
 const state = {
@@ -68,6 +70,18 @@ const state = {
   loadingCatalogs: new Set(),
   composerPicker: { kind: null, query: "", left: 24, bottom: 72 },
   lastComposerFooterSig: "",
+
+  // v0.0.2 Layout, Inspector, Command Palette & Arena Upgrades
+  sidebarCollapsed: false,
+  inspectorTab: "diff", // 'diff' | 'trace'
+  diffWide: false,
+  themePopoverOpen: false,
+  cmdPaletteOpen: false,
+  cmdPaletteQuery: "",
+  cmdPaletteIdx: 0,
+  expandedCmdSteps: new Set(),
+  arenaSlotModels: new Map(),
+  arenaExtraSlots: [],
 };
 
 const terminalMgr = new TerminalManager();
@@ -78,7 +92,7 @@ const terminalMgr = new TerminalManager();
 function installGlobalTactileFeedback() {
   document.addEventListener("pointerdown", (e) => {
     const target = e.target.closest(
-      ".btn, .rail-btn, .theme-btn, .pool-pill, .preset-card, .term-tab, .diff-file-pill, .mode-seg-btn, .onboard-tab, .provider-pill-card, .fleet-seg-btn, .card-more-btn, .studio-agent-card, .studio-file-row, .composer-picker-btn, .cpp-item"
+      ".btn, .rail-btn, .theme-btn, .theme-picker-btn, .theme-popover-item, .pool-pill, .preset-card, .term-tab, .diff-file-pill, .mode-seg-btn, .onboard-tab, .provider-pill-card, .onboard-provider-item, .fleet-seg-btn, .card-more-btn, .studio-agent-card, .studio-file-row, .composer-picker-btn, .cpp-item, .inspector-tab-btn, .cmd-palette-item"
     );
     if (!target || target.disabled || target.classList.contains("is-busy")) return;
 
@@ -108,6 +122,9 @@ function installGlobalTactileFeedback() {
     if (state.cardMenuWsId && !e.target.closest("#card-context-menu, [data-card-more]")) {
       closeCardContextMenu();
     }
+    if (state.themePopoverOpen && !e.target.closest("#theme-popover, #theme-switcher")) {
+      closeThemePopover();
+    }
     if (state.mentionMenu.open && !e.target.closest("#mention-popup, #btn-open-at-menu, #composer-input")) {
       state.mentionMenu.open = false;
       renderMentionPopup();
@@ -118,8 +135,41 @@ function installGlobalTactileFeedback() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.composerPicker.kind) {
-      closeComposerPickerPopover();
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      if (state.cmdPaletteOpen) closeCommandPalette();
+      else openCommandPalette();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      e.preventDefault();
+      toggleSidebarCollapse();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (state.cmdPaletteOpen) {
+        e.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+      if (state.composerPicker.kind) {
+        closeComposerPickerPopover();
+        return;
+      }
+      if (state.themePopoverOpen) {
+        closeThemePopover();
+        return;
+      }
+      if (state.rosterPopoverOpen || state.topbarPoolOpen || state.cardMenuWsId || state.inspectedPopoverWsId) {
+        closeRosterPopover();
+        closeTopbarPoolPopover();
+        closeCardContextMenu();
+        closeAccountPopover();
+        return;
+      }
+      if (document.getElementById("modal-backdrop")) {
+        closeModal();
+      }
     }
   });
 }
@@ -190,17 +240,23 @@ function initShell() {
   root.innerHTML = `
     <header class="topbar" id="topbar">
       <div class="topbar-brand">
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-sidebar" style="padding:4px 6px" title="切换侧边栏 (Ctrl+B)">${icon("sidebar", 14)}</button>
         <div class="topbar-logo"><img src="/assets/AppIcon.png" alt="Logo" /></div>
         <span class="topbar-title">Hyperion</span>
-        <span class="topbar-badge">项目工作台</span>
+        <div class="topbar-pool" id="topbar-pool"></div>
       </div>
-      <div class="topbar-pool" id="topbar-pool"></div>
+      <div class="topbar-center">
+        <button class="topbar-cmd-trigger" id="btn-cmd-palette" title="打开快速命令面板 (Ctrl+K)">
+          <span style="display:inline-flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon("search", 12)} <span>搜索项目、对话或命令…</span></span>
+          <span class="kbd-hint">Ctrl+K</span>
+        </button>
+      </div>
       <div class="topbar-actions">
         <button class="btn btn-sm" id="btn-topbar-stealth" title="将所有外部客户端窗口隐藏至后台运行，桌面与任务栏零弹窗"></button>
         <button class="btn btn-sm" id="btn-toggle-failover" title="某个账号额度耗尽或触发 429 时，自动无感切换池内健康账号"></button>
-        <button class="btn btn-sm" id="btn-toggle-design" title="打开内置浏览器实时预览与点选 DOM/截图">🌐 预览</button>
-        <button class="btn btn-sm" id="btn-toggle-lang" title="Switch UI to English" style="min-width:40px;font-weight:700">EN</button>
-        <div class="theme-switcher" id="theme-switcher"></div>
+        <button class="btn btn-sm" id="btn-toggle-design" title="打开内置浏览器实时预览与点选 DOM/截图">${icon("globe", 13)} <span>预览</span></button>
+        <button class="btn btn-sm" id="btn-toggle-lang" title="Switch UI to English" style="min-width:36px;font-weight:700">EN</button>
+        <div id="theme-switcher"></div>
         <div class="win-controls">
           <button class="win-btn" id="win-min" title="最小化">&#x2014;</button>
           <button class="win-btn" id="win-max" title="最大化 / 还原">&#x25A1;</button>
@@ -210,6 +266,7 @@ function initShell() {
     </header>
 
     <div id="popover-root"></div>
+    <div id="cmd-palette-root"></div>
 
     <div id="design-toolbar" style="display:none;height:38px;background:var(--bg-sidebar);border-bottom:1px solid var(--border-subtle);padding:0 14px;align-items:center;gap:8px">
       <span class="tag worktree">Design Mode</span>
@@ -260,20 +317,24 @@ function initShell() {
       <main class="view-stage">
         <!-- VIEW 1: UNIFIED COMMAND CENTER -->
         <section id="view-command" class="command-layout">
-          <aside class="session-sidebar">
+          <aside class="session-sidebar" id="session-sidebar">
             <div class="sidebar-header">
               <div class="sidebar-header-row" style="gap:6px">
-                <button class="btn btn-primary btn-sm" id="btn-new-project" style="flex:1">＋ 新建项目</button>
-                <button class="btn btn-sm" id="btn-open-project" title="打开电脑上已有的项目文件夹">📂 打开</button>
+                <button class="btn btn-primary btn-sm" id="btn-new-project" style="flex:1">${icon("plus", 13)} <span>新建项目</span></button>
+                <button class="btn btn-sm" id="btn-open-project" title="打开电脑上已有的项目文件夹">${icon("folderOpen", 13)} <span>打开</span></button>
               </div>
               <input id="session-filter-input" class="input" style="padding:5px 8px;font-size:11.5px" placeholder="搜索项目或对话…" />
             </div>
             <div class="session-list" id="session-list"></div>
           </aside>
+          <div class="pane-resizer-v" id="sidebar-resizer" title="拖拽调整侧栏宽度 · 双击还原"></div>
 
           <div class="center-pane">
             <div class="room-header" id="room-header"></div>
-            <div class="chat-stream" id="chat-stream"></div>
+            <div class="chat-stream-wrap">
+              <div class="chat-stream" id="chat-stream"></div>
+              <button type="button" class="scroll-bottom-pill" id="btn-scroll-bottom" style="display:none">${icon("arrowDown", 13)} <span>回到底部</span></button>
+            </div>
 
             <div class="composer-area" id="composer-area">
               <div id="mention-popup" class="mention-popup" style="display:none"></div>
@@ -281,19 +342,20 @@ function initShell() {
               <div class="composer-box">
                 <textarea id="composer-input" class="composer-input" placeholder="输入指令，或按 @ 点名任意智能体协同处理（Ctrl+Enter 发送）…"></textarea>
                 <div class="composer-footer">
-                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;overflow:hidden">
+                  <div class="composer-footer-left">
                     <div class="mode-segmented" id="composer-mode-switch"></div>
                     <div class="composer-hints" id="composer-quick-mentions"></div>
                   </div>
-                  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                    <button class="btn btn-danger btn-sm" id="btn-stop-room" style="display:none">■ 停止</button>
-                    <button class="btn btn-primary btn-sm" id="btn-send-msg" style="padding:5px 16px">发送 (Enter)</button>
+                  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto">
+                    <button class="btn btn-danger btn-sm" id="btn-stop-room" style="display:none;border-radius:999px">${icon("stop", 11)} <span>停止</span></button>
+                    <button class="btn btn-primary btn-sm" id="btn-send-msg">${icon("arrowUp", 13)} <span>发送</span></button>
                   </div>
                 </div>
               </div>
             </div>
 
             <div id="terminal-dock" class="terminal-dock" style="display:none">
+              <div class="pane-resizer-h" id="term-resizer" title="拖拽调整终端高度 · 双击还原"></div>
               <div class="terminal-topbar">
                 <div class="terminal-tabs" id="terminal-tabs"></div>
                 <div style="display:flex;align-items:center;gap:5px">
@@ -301,29 +363,37 @@ function initShell() {
                   <button class="btn btn-sm" data-spawn-term="shell">＋ PowerShell</button>
                   <button class="btn btn-sm" data-spawn-term="codex">＋ Codex TUI</button>
                   <button class="btn btn-sm" data-spawn-term="claude">＋ Claude TUI</button>
-                  <button class="btn btn-ghost btn-sm" id="btn-term-max" title="放大 / 还原终端高度">⇅</button>
-                  <button class="btn btn-ghost btn-sm" id="btn-term-hide" title="收起终端面板">✕</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-term-max" title="放大 / 还原终端高度">${icon("maximize", 12)}</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-term-hide" title="收起终端面板">${icon("close", 13)}</button>
                 </div>
               </div>
               <div class="terminal-stage" id="terminal-stage"></div>
             </div>
           </div>
 
+          <div class="pane-resizer-v" id="diff-resizer" style="display:none" title="拖拽调整审查面板宽度 · 双击还原"></div>
           <aside id="diff-drawer" class="diff-drawer" style="display:none">
             <div class="diff-header">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                <div style="font-weight:700;font-size:13px" id="diff-title">Git Diff 审查与逐行批注</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                  <div class="inspector-tabs">
+                    <button type="button" class="inspector-tab-btn active" id="insp-tab-diff">${icon("diff", 12)} <span>Diff 审查</span></button>
+                    <button type="button" class="inspector-tab-btn" id="insp-tab-trace">${icon("activity", 12)} <span>实时轨迹</span></button>
+                  </div>
+                  <div style="font-weight:700;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="diff-title">Git Diff 审查</div>
+                </div>
                 <div style="display:flex;align-items:center;gap:4px">
                   <button class="btn btn-sm" id="btn-diff-unified">Unified</button>
                   <button class="btn btn-sm" id="btn-diff-split">并排 Split</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-diff-wide" title="加宽 / 还原面板">${icon("maximize", 12)}</button>
                   <button class="btn btn-sm" id="btn-diff-refresh">↻ 刷新</button>
-                  <button class="btn btn-ghost btn-sm" id="btn-diff-close">✕</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-diff-close">${icon("close", 13)}</button>
                 </div>
               </div>
               <div class="diff-files-strip" id="diff-files-strip"></div>
             </div>
             <div class="diff-body" id="diff-body"></div>
-            <div class="diff-review-bar">
+            <div class="diff-review-bar" id="diff-review-bar">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
                 <span style="font-size:11.5px;color:var(--text-secondary)" id="diff-queue-count">点击任意代码行左侧 ＋ 添加行内批注</span>
                 <select id="diff-target-agent" class="select" style="width:auto;padding:3px 8px;font-size:11px"></select>
@@ -333,6 +403,7 @@ function initShell() {
                 <button class="btn btn-primary btn-sm" id="btn-submit-diff-review">打包发回修改</button>
               </div>
             </div>
+            <div id="cmd-inspector-trace" style="display:none;flex:1;overflow-y:auto;padding:12px;flex-direction:column;gap:12px"></div>
           </aside>
         </section>
 
@@ -428,7 +499,7 @@ function initShell() {
               <textarea id="arena-prompt-input" class="textarea" rows="3" placeholder="输入赛马开发任务：各参赛 Agent 将在后台各自独立的 Git Worktree 分支中同步实现…"></textarea>
               <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
                 <div id="arena-contestants-picker" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
-                <button class="btn btn-primary" id="btn-arena-start">🚀 启动后台并行赛马</button>
+                <button class="btn btn-primary" id="btn-arena-start">${icon("zap", 13)} <span>启动后台并行赛马</span></button>
               </div>
             </div>
             <div id="arena-sessions-list" style="display:flex;flex-direction:column;gap:18px"></div>
@@ -500,6 +571,37 @@ function initShell() {
 
   installGlobalTactileFeedback();
   bindGlobalListeners();
+  attachVerticalResizer(document.getElementById("sidebar-resizer"), document.getElementById("session-sidebar"), {
+    direction: 1,
+    min: 185,
+    maxFn: () => Math.min(440, Math.round(window.innerWidth * 0.36)),
+    defaultSize: 248,
+    storageKey: "ade_sidebar_width",
+    onResize: () => { if (state.terminalOpen) terminalMgr.fitActive(); },
+  });
+  attachVerticalResizer(document.getElementById("diff-resizer"), document.getElementById("diff-drawer"), {
+    direction: -1,
+    min: 360,
+    maxFn: () => Math.round(window.innerWidth * 0.68),
+    defaultSize: 480,
+    storageKey: "ade_diff_width",
+    onResize: () => { if (state.terminalOpen) terminalMgr.fitActive(); },
+  });
+  attachHorizontalResizer(document.getElementById("term-resizer"), document.getElementById("terminal-dock"), {
+    min: 140,
+    maxFn: () => Math.round(window.innerHeight * 0.72),
+    defaultSize: 255,
+    storageKey: "ade_term_height",
+    onResize: () => terminalMgr.fitActive(),
+  });
+}
+
+function toggleSidebarCollapse() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  document.getElementById("session-sidebar")?.classList.toggle("is-collapsed", state.sidebarCollapsed);
+  const resizer = document.getElementById("sidebar-resizer");
+  if (resizer) resizer.style.display = state.sidebarCollapsed ? "none" : "";
+  if (state.terminalOpen) setTimeout(() => terminalMgr.fitActive(), 40);
 }
 
 /* ==========================================================================
@@ -509,13 +611,16 @@ function bindGlobalListeners() {
   const topbar = document.getElementById("topbar");
   topbar.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest("button, select, input, .pool-pill, .theme-switcher")) return;
+    if (e.target.closest("button, select, input, .pool-pill, #theme-switcher")) return;
     fireAndForget("window.drag");
   });
   topbar.addEventListener("dblclick", (e) => {
-    if (e.target.closest("button, select, input, .pool-pill, .theme-switcher")) return;
+    if (e.target.closest("button, select, input, .pool-pill, #theme-switcher")) return;
     rpc("window.maximizeToggle");
   });
+
+  document.getElementById("btn-toggle-sidebar").onclick = () => toggleSidebarCollapse();
+  document.getElementById("btn-cmd-palette").onclick = () => openCommandPalette();
 
   document.getElementById("win-min").onclick = () => rpc("window.minimize");
   document.getElementById("win-max").onclick = () => rpc("window.maximizeToggle");
@@ -641,7 +746,7 @@ function bindGlobalListeners() {
     if (state.studioRoomId) state.studioDrafts.set(state.studioRoomId, studioInput.value);
   });
   studioInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       sendCurrentStudioMessage();
     }
@@ -664,12 +769,44 @@ function bindGlobalListeners() {
   studioDiffBtn.onclick = () =>
     runButtonAction(studioDiffBtn, { busyText: "扫描…", doneText: "✓" }, () => refreshStudioDiff(true));
 
-  // Composer & @ Autocomplete
+  // Composer, Clipboard Image Paste & @ Autocomplete
   const composer = document.getElementById("composer-input");
   composer.addEventListener("input", () => {
     if (state.selectedRoomId) state.roomDrafts.set(state.selectedRoomId, composer.value);
     updateMentionAutocomplete();
   });
+  composer.addEventListener("paste", (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imgItems = items.filter((it) => it.type?.startsWith("image/"));
+    if (imgItems.length === 0) return;
+    for (const it of imgItems) {
+      const file = it.getAsFile();
+      if (!file) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          state.designCaptures.push({
+            selector: "剪贴板图片",
+            screenshotDataUrl: reader.result,
+          });
+          renderDesignChips();
+          showToast("info", "已从剪贴板附加图片截图至输入框");
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  const chatStreamEl = document.getElementById("chat-stream");
+  const scrollBottomBtn = document.getElementById("btn-scroll-bottom");
+  chatStreamEl.addEventListener("scroll", () => {
+    const dist = chatStreamEl.scrollHeight - chatStreamEl.scrollTop - chatStreamEl.clientHeight;
+    scrollBottomBtn.style.display = dist > 160 ? "inline-flex" : "none";
+  });
+  scrollBottomBtn.onclick = () => {
+    chatStreamEl.scrollTo({ top: chatStreamEl.scrollHeight, behavior: "smooth" });
+    scrollBottomBtn.style.display = "none";
+  };
   composer.addEventListener("keydown", (e) => {
     if (state.mentionMenu.open) {
       const agents = getCurrentRoom()?.agents || [];
@@ -733,9 +870,38 @@ function bindGlobalListeners() {
     renderTerminalDock();
   };
 
-  // Diff Drawer
-  document.getElementById("btn-diff-unified").onclick = () => { state.diffMode = "unified"; renderDiffDrawerContent(); };
-  document.getElementById("btn-diff-split").onclick = () => { state.diffMode = "split"; renderDiffDrawerContent(); };
+  // Diff & Live Trace Inspector Drawer
+  document.getElementById("insp-tab-diff").onclick = () => {
+    state.inspectorTab = "diff";
+    renderDiffDrawerContent();
+  };
+  document.getElementById("insp-tab-trace").onclick = () => {
+    state.inspectorTab = "trace";
+    renderDiffDrawerContent();
+  };
+  document.getElementById("btn-diff-unified").onclick = () => {
+    state.diffMode = "unified";
+    state.inspectorTab = "diff";
+    renderDiffDrawerContent();
+  };
+  document.getElementById("btn-diff-split").onclick = () => {
+    state.diffMode = "split";
+    state.inspectorTab = "diff";
+    const drawer = document.getElementById("diff-drawer");
+    if (drawer && drawer.getBoundingClientRect().width < 640) {
+      drawer.style.width = `${Math.min(720, Math.round(window.innerWidth * 0.56))}px`;
+    }
+    renderDiffDrawerContent();
+  };
+  document.getElementById("btn-diff-wide").onclick = () => {
+    state.diffWide = !state.diffWide;
+    const drawer = document.getElementById("diff-drawer");
+    if (drawer) {
+      drawer.style.width = state.diffWide
+        ? `${Math.round(window.innerWidth * 0.62)}px`
+        : "480px";
+    }
+  };
   const diffRefreshBtn = document.getElementById("btn-diff-refresh");
   diffRefreshBtn.onclick = () =>
     runButtonAction(diffRefreshBtn, { busyText: "计算…", doneText: "✓ 最新", successToast: "已重新扫描 Git 代码变更" }, () =>
@@ -790,6 +956,12 @@ function bindGlobalListeners() {
   });
 
   document.addEventListener("click", (e) => {
+    const extLink = e.target.closest("[data-ext-url]");
+    if (extLink) {
+      e.preventDefault();
+      rpc("shell.openUrl", { url: extLink.dataset.extUrl }).catch((err) => showToast("error", err.message));
+      return;
+    }
     const copyBtn = e.target.closest("[data-copy-code]");
     if (copyBtn) {
       const code = decodeURIComponent(copyBtn.dataset.copyCode);
@@ -860,27 +1032,187 @@ function applyTheme(themeId) {
   document.documentElement.setAttribute("data-theme", valid);
   terminalMgr.setTheme(valid);
   renderThemeSwitcher(valid);
+  fireAndForget("window.syncTheme", { theme: valid });
 }
 
-function renderThemeSwitcher(activeTheme) {
-  const el = document.getElementById("theme-switcher");
-  let sel = document.getElementById("theme-select-box");
-  if (!sel) {
-    el.innerHTML =
-      `<select class="theme-select" id="theme-select-box" title="切换界面风格">` +
-      THEMES.map((t) => `<option value="${t.id}" ${t.id === activeTheme ? "selected" : ""}>🎨 ${t.label}</option>`).join("") +
-      `</select>`;
-    sel = document.getElementById("theme-select-box");
-    sel.onchange = () => {
-      const next = sel.value;
+function closeThemePopover() {
+  state.themePopoverOpen = false;
+  document.getElementById("theme-popover")?.remove();
+}
+
+function openThemePopover(anchorEl) {
+  if (state.themePopoverOpen) {
+    closeThemePopover();
+    return;
+  }
+  closeThemePopover();
+  closeTopbarPoolPopover();
+  closeRosterPopover();
+  closeAccountPopover();
+  state.themePopoverOpen = true;
+
+  const activeTheme = document.documentElement.getAttribute("data-theme") || "obsidian";
+  const rect = anchorEl.getBoundingClientRect();
+  const pop = document.createElement("div");
+  pop.id = "theme-popover";
+  pop.className = "theme-popover";
+  pop.style.top = `${rect.bottom + 6}px`;
+  pop.style.left = `${Math.max(12, Math.min(window.innerWidth - 198, rect.right - 185))}px`;
+  pop.innerHTML = THEMES.map(
+    (t) =>
+      `<button type="button" class="theme-popover-item ${t.id === activeTheme ? "active" : ""}" data-pick-theme="${t.id}">` +
+        `<span style="display:flex;align-items:center;gap:8px"><span class="theme-swatch" style="background:${t.swatch}"></span><span>${t.label}</span></span>` +
+        `<span>${t.id === activeTheme ? "✓" : ""}</span>` +
+      `</button>`
+  ).join("");
+  document.body.appendChild(pop);
+  applyLanguageToRoot(pop);
+
+  pop.querySelectorAll("[data-pick-theme]").forEach((btn) => {
+    btn.onclick = () => {
+      const next = btn.dataset.pickTheme;
+      closeThemePopover();
       applyTheme(next);
       rpc("settings.update", { theme: next }).catch(() => {});
       const label = THEMES.find((x) => x.id === next)?.label || next;
       showToast("info", `已切换界面风格：${label}`);
     };
-  } else if (document.activeElement !== sel && sel.value !== activeTheme) {
-    sel.value = activeTheme;
-  }
+  });
+}
+
+function renderThemeSwitcher(activeTheme) {
+  const el = document.getElementById("theme-switcher");
+  if (!el) return;
+  const cur = THEMES.find((t) => t.id === activeTheme) || THEMES[0];
+  el.innerHTML =
+    `<button type="button" class="theme-picker-btn" id="theme-select-box" title="切换界面风格">` +
+      `<span class="theme-swatch" style="background:${cur.swatch}"></span>` +
+      `<span>${cur.label}</span>` +
+      `<span style="color:var(--text-muted);font-size:10px">▾</span>` +
+    `</button>`;
+  const btn = document.getElementById("theme-select-box");
+  btn.onclick = (ev) => {
+    ev.stopPropagation();
+    openThemePopover(btn);
+  };
+  applyLanguageToRoot(el);
+}
+
+function closeCommandPalette() {
+  state.cmdPaletteOpen = false;
+  document.getElementById("cmd-palette-root").innerHTML = "";
+}
+
+function openCommandPalette() {
+  state.cmdPaletteOpen = true;
+  state.cmdPaletteQuery = "";
+  state.cmdPaletteIdx = 0;
+
+  const root = document.getElementById("cmd-palette-root");
+  root.innerHTML = `
+    <div class="cmd-palette-backdrop" id="cmd-palette-backdrop">
+      <div class="cmd-palette-panel">
+        <div class="cmd-palette-head">
+          ${icon("search", 15)}
+          <input id="cmd-palette-input" class="cmd-palette-input" placeholder="快速跳转项目、会话、视图或执行命令…" />
+          <span class="kbd-hint">ESC</span>
+        </div>
+        <div class="cmd-palette-list" id="cmd-palette-list"></div>
+      </div>
+    </div>
+  `;
+  applyLanguageToRoot(root);
+
+  document.getElementById("cmd-palette-backdrop").onclick = (e) => {
+    if (e.target.id === "cmd-palette-backdrop") closeCommandPalette();
+  };
+
+  const getItems = () => {
+    const en = getUiLanguage() === "en";
+    const items = [
+      { label: en ? "Switch to Project Workspace" : "前往：项目工作台", sub: "View", run: () => switchView("command") },
+      { label: en ? "Switch to Parallel Worktree Arena" : "前往：多智能体赛马竞技场", sub: "View", run: () => switchView("arena") },
+      { label: en ? "Switch to Accounts & Quota Pool" : "前往：账号与额度池", sub: "View", run: () => switchView("fleet") },
+      { label: en ? "Create New Project…" : "新建项目工作空间…", sub: "Project", run: () => openCreateProjectModal() },
+      { label: en ? "Open Existing Project Folder…" : "打开本地已有项目文件夹…", sub: "Project", run: () => openExistingProjectPicker() },
+      { label: en ? "Add Account / Direct API / CLI Agent…" : "添加智能体账号 / 直连 API / CLI…", sub: "Account", run: () => openAddProfileModal("api") },
+      { label: en ? "Toggle Integrated ConPTY Terminal" : "展开 / 收起内置分屏终端", sub: "IDE", run: () => { switchView("command"); document.getElementById("btn-toggle-term")?.click(); } },
+      { label: en ? "Open Git Diff & Live Trace Drawer" : "打开右侧 Git Diff 与实时轨迹面板", sub: "IDE", run: () => { switchView("command"); state.diffOpen = true; renderRoomHeader(); renderDiffDrawer(); } },
+      { label: en ? "Toggle Sidebar (Ctrl+B)" : "折叠 / 展开左侧项目树 (Ctrl+B)", sub: "Layout", run: () => toggleSidebarCollapse() },
+      { label: en ? "Refresh All Quotas & Processes" : "立即刷新全平台配额与守护进程", sub: "Pool", run: () => document.getElementById("btn-rail-refresh")?.click() },
+      ...THEMES.map((t) => ({
+        label: en ? `Theme: ${t.id[0].toUpperCase() + t.id.slice(1)}` : `切换主题：${t.label}`,
+        sub: "Theme",
+        run: () => { applyTheme(t.id); rpc("settings.update", { theme: t.id }).catch(() => {}); },
+      })),
+    ];
+    for (const r of getSharedRooms()) {
+      const pName = getProjectNameFromPath(getRoomProjectPath(r));
+      items.push({
+        label: `${pName} / ${r.title}`,
+        sub: r.worktreeBranch ? `⑂ ${r.worktreeBranch}` : "Thread",
+        run: () => { switchView("command"); selectRoom(r.id); },
+      });
+    }
+    const q = state.cmdPaletteQuery;
+    if (!q) return items;
+    return items.filter((it) => it.label.toLowerCase().includes(q) || it.sub.toLowerCase().includes(q));
+  };
+
+  const renderList = () => {
+    const listEl = document.getElementById("cmd-palette-list");
+    if (!listEl) return;
+    const items = getItems();
+    if (items.length === 0) {
+      listEl.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px">没有匹配的命令或项目</div>`;
+      applyLanguageToRoot(listEl);
+      return;
+    }
+    state.cmdPaletteIdx = Math.max(0, Math.min(state.cmdPaletteIdx, items.length - 1));
+    listEl.innerHTML = items
+      .map(
+        (it, idx) =>
+          `<div class="cmd-palette-item ${idx === state.cmdPaletteIdx ? "selected" : ""}" data-cmd-idx="${idx}">` +
+            `<span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(it.label)}</span>` +
+            `<span class="kbd-hint">${escapeHtml(it.sub)}</span>` +
+          `</div>`
+      )
+      .join("");
+    listEl.querySelectorAll("[data-cmd-idx]").forEach((row) => {
+      row.onclick = () => {
+        const chosen = items[Number(row.dataset.cmdIdx)];
+        closeCommandPalette();
+        chosen?.run();
+      };
+    });
+  };
+
+  const inp = document.getElementById("cmd-palette-input");
+  inp.oninput = () => {
+    state.cmdPaletteQuery = inp.value.trim().toLowerCase();
+    state.cmdPaletteIdx = 0;
+    renderList();
+  };
+  inp.onkeydown = (e) => {
+    const items = getItems();
+    if (e.key === "ArrowDown" && items.length > 0) {
+      e.preventDefault();
+      state.cmdPaletteIdx = (state.cmdPaletteIdx + 1) % items.length;
+      renderList();
+    } else if (e.key === "ArrowUp" && items.length > 0) {
+      e.preventDefault();
+      state.cmdPaletteIdx = (state.cmdPaletteIdx - 1 + items.length) % items.length;
+      renderList();
+    } else if (e.key === "Enter" && items[state.cmdPaletteIdx]) {
+      e.preventDefault();
+      const chosen = items[state.cmdPaletteIdx];
+      closeCommandPalette();
+      chosen.run();
+    }
+  };
+
+  renderList();
+  setTimeout(() => inp.focus(), 20);
 }
 
 function closeTopbarPoolPopover() {
@@ -971,10 +1303,10 @@ function renderTopbarPool() {
     const vis = stealth.visibleClientWindows ?? 0;
     stealthBtn.style.display = "inline-flex";
     stealthBtn.style.alignItems = "center";
-    stealthBtn.style.gap = "6px";
+    stealthBtn.style.gap = "5px";
     stealthBtn.innerHTML = stealthOn
-      ? `<span class="switch-pill is-on"></span><span>👻 窗口隐身</span>`
-      : `<span class="switch-pill"></span><span>👁 窗口显示${vis > 0 ? ` (${vis})` : ""}</span>`;
+      ? `<span class="status-mini-dot on"></span>${icon("eyeOff", 12)}<span>隐身</span>`
+      : `<span class="status-mini-dot"></span>${icon("eye", 12)}<span>窗口${vis > 0 ? ` (${vis})` : ""}</span>`;
     stealthBtn.title = stealthOn
       ? "当前：窗口隐身开启（后台无窗运行）· 点击切换为显示外部客户端窗口"
       : "当前：显示客户端窗口 · 点击切换为全部后台隐身";
@@ -985,26 +1317,25 @@ function renderTopbarPool() {
     const enabled = data.settings?.autoFailoverEnabled;
     failoverBtn.style.display = "inline-flex";
     failoverBtn.style.alignItems = "center";
-    failoverBtn.style.gap = "6px";
+    failoverBtn.style.gap = "5px";
     failoverBtn.innerHTML = enabled
-      ? `<span class="switch-pill is-on cyan"></span><span>⚡ 自动换号</span>`
-      : `<span class="switch-pill"></span><span style="color:var(--text-muted)">⚡ 自动换号</span>`;
+      ? `<span class="status-mini-dot cyan"></span>${icon("zap", 12)}<span>自动换号</span>`
+      : `<span class="status-mini-dot"></span>${icon("zap", 12)}<span style="color:var(--text-muted)">自动换号</span>`;
   }
 
   const strip = document.getElementById("topbar-pool");
   const entries = (data.pool?.entries || []).filter((e) => e.health !== "UnsupportedClient");
   const activeCount = entries.reduce((sum, e) => sum + (e.activeTasks || 0), 0);
   const readyCount = data.pool?.readyNodeCount ?? entries.filter((e) => e.authReady).length;
-  const avgRem = data.pool?.averageRemainingPercent != null ? ` · 均余 ${Math.round(data.pool.averageRemainingPercent)}%` : "";
 
   strip.innerHTML =
-    `<div class="pool-pill" id="topbar-pool-summary" title="点击快速查看全部智能体状态">` +
+    `<div class="pool-pill" id="topbar-pool-summary" title="点击快速查看全部智能体与配额状态">` +
       `<span class="pool-dot ${readyCount > 0 ? "healthy" : "unknown"}"></span>` +
-      `<span style="font-weight:600;color:var(--text-primary)">${readyCount}/${entries.length} 智能体就绪${avgRem}</span>` +
+      `<span>${readyCount}/${entries.length} 就绪</span>` +
       `<span style="color:var(--text-muted);font-size:10px">▾</span>` +
     `</div>` +
     (activeCount > 0
-      ? `<div class="pool-pill active-task" style="color:var(--accent-cyan);font-weight:700">⚡ ${activeCount} 个任务执行中</div>`
+      ? `<div class="pool-pill active-task" style="color:var(--accent-cyan);font-weight:600"><span class="pulse-dot"></span> <span>${activeCount} 运行中</span></div>`
       : "");
 
   const summaryPill = document.getElementById("topbar-pool-summary");
@@ -1405,17 +1736,17 @@ function renderSessionList() {
           g.threads
             .map((r) => {
               const active = r.id === state.selectedRoomId;
-              const icon = r.isIsolatedWorktree ? "⑂" : "💬";
+              const threadIcon = r.isIsolatedWorktree ? icon("branch", 12) : icon("message", 12);
               const wtTag = r.isIsolatedWorktree
                 ? `<span class="tag worktree" style="padding:0 5px;font-size:10px">${escapeHtml(r.worktreeBranch)}</span>`
                 : "";
               const rightMeta = r.isRunning
                 ? `<span class="pulse-dot" style="flex-shrink:0" title="智能体正在执行"></span>`
-                : `<span style="font-size:10.5px;color:var(--text-muted);flex-shrink:0">${r.messages?.length || 0}</span>`;
+                : "";
               return (
                 `<div class="project-thread-item ${active ? "active" : ""}" data-select-room="${escapeHtml(r.id)}" title="${escapeHtml(r.title)} · ${escapeHtml(r.workingDirectory || "")}">` +
                   `<div style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden">` +
-                    `<span style="font-size:11.5px;opacity:0.8;flex-shrink:0">${icon}</span>` +
+                    `<span style="opacity:0.78;flex-shrink:0;display:inline-flex">${threadIcon}</span>` +
                     `<span class="project-thread-title">${escapeHtml(r.title)}</span>` +
                     wtTag +
                   `</div>` +
@@ -1430,13 +1761,13 @@ function renderSessionList() {
         `<div class="project-group ${isCurrentProj ? "is-active-proj" : ""}">` +
           `<div class="project-group-header" data-toggle-proj="${escapeHtml(g.key)}" data-proj-path="${escapeHtml(g.path)}" title="${escapeHtml(g.path)}">` +
             `<span style="font-size:10px;color:var(--text-muted);width:10px;flex-shrink:0">${chevron}</span>` +
-            `<span style="font-size:13px;flex-shrink:0">📁</span>` +
+            `<span style="color:var(--accent-cyan);display:inline-flex;flex-shrink:0">${icon("folder", 13)}</span>` +
             `<span class="project-group-name">${escapeHtml(g.name)}</span>` +
             `<div class="project-group-actions">` +
-              `<button class="proj-icon-btn" data-proj-new-thread="${escapeHtml(g.path)}" title="在此项目下新建对话">＋</button>` +
-              `<button class="proj-icon-btn" data-proj-explorer="${escapeHtml(g.path)}" title="在资源管理器中打开目录">📂</button>` +
+              `<button class="proj-icon-btn" data-proj-new-thread="${escapeHtml(g.path)}" title="在此项目下新建对话">${icon("plus", 12)}</button>` +
+              `<button class="proj-icon-btn" data-proj-explorer="${escapeHtml(g.path)}" title="在资源管理器中打开目录">${icon("folderOpen", 12)}</button>` +
               (orderedGroups.length > 1
-                ? `<button class="proj-icon-btn" data-proj-remove="${escapeHtml(g.path)}" title="从侧栏移除此项目（本地文件保留）">✕</button>`
+                ? `<button class="proj-icon-btn" data-proj-remove="${escapeHtml(g.path)}" title="从侧栏移除此项目（本地文件保留）">${icon("close", 12)}</button>`
                 : "") +
             `</div>` +
           `</div>` +
@@ -1634,30 +1965,30 @@ function renderRoomHeader() {
   const projPath = getRoomProjectPath(room);
   const projName = getProjectNameFromPath(projPath);
   const wtBadge = room.isIsolatedWorktree
-    ? `<span class="tag worktree" title="独立工作树目录：${escapeHtml(room.workingDirectory)}">⑂ ${escapeHtml(room.worktreeBranch)}</span>`
+    ? `<span class="tag worktree" style="max-width:155px" title="独立工作树目录：${escapeHtml(room.workingDirectory)}">${icon("branch", 11)} <span>${escapeHtml(room.worktreeBranch)}</span></span>`
     : "";
 
   const wtActionsHtml = room.isIsolatedWorktree
-    ? `<button class="btn btn-success btn-sm" id="btn-room-merge" ${room.isRunning ? "disabled" : ""}>⑂ 合并回主库</button>`
-    : `<button class="btn btn-sm" id="btn-room-spawn-wt" ${room.isRunning ? "disabled" : ""} title="为此对话派生独立 Git Worktree 分支">⑂ 独立分支</button>`;
+    ? `<button class="btn btn-success btn-sm" id="btn-room-merge" ${room.isRunning ? "disabled" : ""}>${icon("merge", 12)} <span>合并回主库</span></button>`
+    : `<button class="btn btn-sm" id="btn-room-spawn-wt" ${room.isRunning ? "disabled" : ""} title="为此对话派生独立 Git Worktree 分支">${icon("branch", 12)} <span>独立分支</span></button>`;
 
   header.innerHTML = `
     <div class="room-header-main">
       <div class="room-title-group">
-        <span class="tag" id="btn-open-cwd" style="cursor:pointer;font-weight:700" title="点击在资源管理器中打开目录：${escapeHtml(room.workingDirectory)}">📁 ${escapeHtml(projName)}</span>
-        <button class="btn btn-ghost btn-sm" id="btn-switch-room-dir" style="padding:2px 6px" ${room.isRunning ? "disabled" : ""} title="切换当前对话绑定的项目文件夹">📂</button>
-        <span style="color:var(--text-muted);font-size:12px">/</span>
-        <span class="room-title" title="${escapeHtml(room.title)}">${escapeHtml(room.title)}</span>
+        <span class="room-crumb-proj" id="btn-open-cwd" title="点击在资源管理器中打开目录：${escapeHtml(room.workingDirectory)}">${icon("folder", 13)} <span>${escapeHtml(projName)}</span></span>
+        <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">/</span>
+        <span class="room-title" style="min-width:64px" title="${escapeHtml(room.title)}">${escapeHtml(room.title)}</span>
         ${wtBadge}
+        <button class="btn btn-ghost btn-sm" id="btn-switch-room-dir" style="padding:3px 6px" ${room.isRunning ? "disabled" : ""} title="切换当前对话绑定的项目文件夹">${icon("folderOpen", 12)}</button>
       </div>
       <div class="room-toolbar">
-        <button class="btn btn-sm" id="btn-new-thread-here" title="在当前项目下再开一个新对话">＋ 新对话</button>
+        <button class="btn btn-sm" id="btn-new-thread-here" title="在当前项目下再开一个新对话">${icon("plus", 12)} <span>新对话</span></button>
         ${wtActionsHtml}
-        <button class="btn btn-sm ${state.terminalOpen ? "btn-primary" : ""}" id="btn-toggle-term">⌨ 终端</button>
-        <button class="btn btn-sm ${state.diffOpen ? "btn-primary" : ""}" id="btn-toggle-diff">± Diff</button>
-        <button class="btn btn-ghost btn-sm" id="btn-roster-popover" title="查看或编排本对话可协作智能体名单">👥 ${room.agents?.length || 0} ▾</button>
-        <button class="btn btn-ghost btn-sm" id="btn-room-settings" ${room.isRunning ? "disabled" : ""} title="对话标题与智能体编排设置">⚙</button>
-        ${getSharedRooms().length > 1 ? `<button class="btn btn-ghost btn-sm" id="btn-room-delete" ${room.isRunning ? "disabled" : ""} title="删除此对话">🗑</button>` : ""}
+        <button class="btn btn-sm ${state.terminalOpen ? "btn-primary" : ""}" id="btn-toggle-term">${icon("terminal", 12)} <span>终端</span></button>
+        <button class="btn btn-sm ${state.diffOpen ? "btn-primary" : ""}" id="btn-toggle-diff">${icon("diff", 12)} <span>Diff</span></button>
+        <button class="btn btn-ghost btn-sm" id="btn-roster-popover" title="查看或编排本对话可协作智能体名单">${icon("users", 13)} <span>${room.agents?.length || 0}</span> ▾</button>
+        <button class="btn btn-ghost btn-sm" id="btn-room-settings" ${room.isRunning ? "disabled" : ""} title="对话标题与智能体编排设置">${icon("settings", 13)}</button>
+        ${getSharedRooms().length > 1 ? `<button class="btn btn-ghost btn-sm" id="btn-room-delete" ${room.isRunning ? "disabled" : ""} title="删除此对话">${icon("trash", 13)}</button>` : ""}
       </div>
     </div>
   `;
@@ -2229,8 +2560,7 @@ function renderComposerFooterControls() {
   }
 
   if (composer) {
-    const modelShort = ctx.matchedEntry?.displayName || ctx.effectiveModelId || ctx.primaryInfo.name;
-    const nextPh = `在「${projName}」向「${ctx.primaryInfo.name} · ${modelShort}」发送指令（Enter 发送，Shift+Enter 换行，输入 @ 可多账号协同）…`;
+    const nextPh = `向 ${ctx.primaryInfo.name} 发送消息，输入 @ 多智能体协作…`;
     if (composer.placeholder !== nextPh && composer.__origPh !== nextPh) {
       composer.placeholder = nextPh;
     }
@@ -2262,8 +2592,8 @@ function renderComposerFooterControls() {
 
   const isWrite = room.sandboxMode === "WorkspaceWrite";
   modeBox.innerHTML =
-    `<button class="mode-seg-btn write ${isWrite ? "active" : ""}" data-set-mode="WorkspaceWrite" title="全功能 Agent 模式：允许直接在当前项目目录读写文件与执行验证命令">🛠 Agent 读写</button>` +
-    `<button class="mode-seg-btn readonly ${!isWrite ? "active" : ""}" data-set-mode="ReadOnly" title="只读规划模式：仅读取分析当前项目，不改动文件">🔍 Ask 只读</button>`;
+    `<button class="mode-seg-btn write ${isWrite ? "active" : ""}" data-set-mode="WorkspaceWrite" title="全功能 Agent 模式：允许直接在当前项目目录读写文件与执行验证命令">${icon("wrench", 11)} <span>Agent</span></button>` +
+    `<button class="mode-seg-btn readonly ${!isWrite ? "active" : ""}" data-set-mode="ReadOnly" title="只读规划模式：仅读取分析当前项目，不改动文件">${icon("search", 11)} <span>Ask</span></button>`;
 
   modeBox.querySelectorAll("[data-set-mode]").forEach((btn) => {
     btn.onclick = () => {
@@ -2276,8 +2606,8 @@ function renderComposerFooterControls() {
 
   const activeWs = ctx.launchable.find((w) => w.id === ctx.primaryWsId);
   const activePe = activeWs ? ctx.poolMap.get(activeWs.id) : null;
-  const activePlat = activeWs ? formatPlatformShort(activePe?.client || activeWs.client, activePe?.plan) : { code: "AI" };
-  const primaryBtnLabel = activeWs ? `[${activePlat.code}] ${activeWs.displayName}` : "未接入智能体";
+  const activePlat = activeWs ? formatPlatformShort(activePe?.client || activeWs.client, activePe?.plan) : { code: "AI", cls: "codex" };
+  const primaryName = activeWs ? activeWs.displayName : "未接入智能体";
 
   let modelControlsHtml = "";
   if (ctx.primaryWsId) {
@@ -2287,21 +2617,17 @@ function renderComposerFooterControls() {
       (ctx.isCatalogLoading ? "正在读取模型…" : "默认模型");
 
     modelControlsHtml +=
-      `<div class="composer-model-pill" style="padding:0 4px 0 0;border:none;background:transparent;gap:3px">` +
-        `<button type="button" class="composer-picker-btn ${state.composerPicker.kind === "model" ? "is-open" : ""}" id="composer-model-select" data-composer-picker="model" title="${escapeHtml(ctx.matchedEntry?.description || "点击选择具体模型（支持实时搜索与自定义模型 ID）")}" ${room.isRunning ? "disabled" : ""}>` +
-          `<span class="composer-picker-lbl">模型：</span>` +
-          `<span class="composer-picker-val">${escapeHtml(modelDisplayLabel)}</span>` +
-          `<span class="composer-picker-caret">▾</span>` +
-        `</button>` +
-        `<button type="button" class="model-refresh-btn ${ctx.isCatalogLoading ? "is-spinning" : ""}" id="btn-refresh-models" title="从官方守护进程或远端 API 实时拉取最新模型列表" ${room.isRunning ? "disabled" : ""}>↻</button>` +
-      `</div>`;
+      `<button type="button" class="composer-picker-btn ${state.composerPicker.kind === "model" ? "is-open" : ""}" id="composer-model-select" data-composer-picker="model" title="${escapeHtml(ctx.matchedEntry?.description || "点击选择具体模型（支持实时搜索与自定义模型 ID）")}" ${room.isRunning ? "disabled" : ""}>` +
+        `<span class="composer-picker-val">${escapeHtml(modelDisplayLabel)}</span>` +
+        `<span class="composer-picker-caret">▾</span>` +
+      `</button>`;
 
     if (ctx.efforts.length > 0) {
-      const effLabel = formatEffortLocalized(ctx.effectiveEffort || ctx.efforts[0].id);
+      const rawEff = String(ctx.effectiveEffort || ctx.efforts[0].id || "");
+      const effShort = rawEff ? rawEff.charAt(0).toUpperCase() + rawEff.slice(1) : "Default";
       modelControlsHtml +=
         `<button type="button" class="composer-picker-btn ${state.composerPicker.kind === "effort" ? "is-open" : ""}" id="composer-effort-select" data-composer-picker="effort" title="原生思考强度 / 推理深度控制" ${room.isRunning ? "disabled" : ""}>` +
-          `<span class="composer-picker-lbl">思考：</span>` +
-          `<span class="composer-picker-val">${escapeHtml(effLabel)}</span>` +
+          `<span class="composer-picker-val">${escapeHtml(effShort)}</span>` +
           `<span class="composer-picker-caret">▾</span>` +
         `</button>`;
     }
@@ -2311,15 +2637,15 @@ function renderComposerFooterControls() {
       const fastOn = ctx.effectiveTier && ctx.effectiveTier.toLowerCase() !== "default" && ctx.effectiveTier.toLowerCase() !== "standard";
       modelControlsHtml +=
         `<button type="button" class="composer-fast-btn ${fastOn ? "is-active" : ""}" id="btn-toggle-fast-tier" data-tier-id="${escapeHtml(tierObj.id)}" title="${escapeHtml(tierObj.description || "切换极速高优推理通道")}" ${room.isRunning ? "disabled" : ""}>` +
-          `<span>⚡ 极速</span>` +
+          `<span>⚡ Fast</span>` +
         `</button>`;
     } else if (ctx.speedTiers.length > 1) {
       const spdLabel =
         ctx.effectiveTier === "ultrafast"
-          ? "⚡⚡ 超极速"
+          ? "⚡⚡ Ultrafast"
           : ctx.effectiveTier && ctx.effectiveTier !== "default"
-          ? "⚡ 极速"
-          : "标准速度";
+          ? "⚡ Fast"
+          : "Standard";
       modelControlsHtml +=
         `<button type="button" class="composer-picker-btn ${state.composerPicker.kind === "speed" ? "is-open" : ""}" id="composer-speed-select" data-composer-picker="speed" title="原生推理速度档位（Standard / Fast / Ultrafast）" ${room.isRunning ? "disabled" : ""}>` +
           `<span class="composer-picker-val">${escapeHtml(spdLabel)}</span>` +
@@ -2328,21 +2654,14 @@ function renderComposerFooterControls() {
     }
   }
 
-  const readyAgents = ctx.agents.filter((a) => !!ctx.poolMap.get(a.workspaceId)?.authReady);
-  const mentionTargets = readyAgents.length > 0 ? readyAgents : ctx.agents;
-  const allMentions = mentionTargets.map((a) => `@${a.alias}`).join(" ");
   mentionsBox.innerHTML =
     `<button type="button" class="composer-picker-btn ${state.composerPicker.kind === "primary" ? "is-open" : ""}" id="composer-primary-select" data-composer-picker="primary" title="默认主力智能体：不输入 @ 时，回车将直接发给此账号处理" ${room.isRunning || ctx.launchable.length === 0 ? "disabled" : ""}>` +
-      `<span class="composer-picker-lbl">主力：</span>` +
-      `<span class="composer-picker-val">${escapeHtml(primaryBtnLabel)}</span>` +
+      `<span class="plat-badge ${activePlat.cls}">${activePlat.code}</span>` +
+      `<span class="composer-picker-val">${escapeHtml(primaryName)}</span>` +
       `<span class="composer-picker-caret">▾</span>` +
     `</button>` +
     modelControlsHtml +
-    `<button class="btn btn-ghost btn-sm" id="btn-open-at-menu" title="输入 @ 点名单个或多个智能体协同工作">@ 协作 (${ctx.agents.length})</button>` +
-    (ctx.agents.length > 1
-      ? `<button class="btn btn-ghost btn-sm" id="btn-mention-all" title="同时点名全部已接入后台 Agent 并行回复">⚡ 全员</button>`
-      : "") +
-    `<button class="btn btn-ghost btn-sm" id="btn-composer-add-agent" title="接入新的免客户端 API / CLI 或隔离账号">＋ 接入</button>`;
+    `<button type="button" class="composer-picker-btn" id="btn-open-at-menu" title="输入 @ 点名单个或多个智能体协同工作">@ 协作</button>`;
 
   mentionsBox.querySelectorAll("[data-composer-picker]").forEach((btn) => {
     btn.onclick = (ev) => {
@@ -2350,14 +2669,6 @@ function renderComposerFooterControls() {
       openComposerPickerPopover(btn.dataset.composerPicker, btn);
     };
   });
-
-  const refreshModelsBtn = document.getElementById("btn-refresh-models");
-  if (refreshModelsBtn) {
-    refreshModelsBtn.onclick = (ev) => {
-      ev.stopPropagation();
-      ensureWorkspaceModelCatalog(ctx.primaryWsId, { forceRefresh: true, wakeDaemon: true, showToastOnDone: true });
-    };
-  }
 
   const fastToggleBtn = document.getElementById("btn-toggle-fast-tier");
   if (fastToggleBtn) {
@@ -2384,28 +2695,209 @@ function renderComposerFooterControls() {
     composer.focus();
     updateMentionAutocomplete();
   };
-
-  document.getElementById("btn-mention-all")?.addEventListener("click", () => {
-    if (!composer) return;
-    composer.value = `${allMentions} ` + composer.value.trimStart();
-    composer.focus();
-  });
-
-  document.getElementById("btn-composer-add-agent").onclick = () => openAddProfileModal("api");
 }
 
 const userToggledThinkMap = new Map();
+
+function buildMessageCardHtml(m) {
+  const isUser = m.role === "User";
+  const bodyHtml = m.text
+    ? `<div class="md-body">${renderMarkdown(m.text)}${m.state === "Running" ? `<span class="streaming-cursor"></span>` : ""}</div>`
+    : "";
+
+  if (isUser) {
+    return (
+      `<article class="msg-card user" data-msg-id="${escapeHtml(m.id)}">` +
+        bodyHtml +
+        `<div class="user-hover-actions">` +
+          (m.timeText ? `<span>${escapeHtml(m.timeText)}</span>` : "") +
+          (m.text ? `<button class="btn btn-ghost btn-sm" data-edit-msg="${encodeURIComponent(m.text || "")}" title="编辑并重新发送">${icon("edit", 11)} <span>编辑</span></button>` : "") +
+          (m.text ? `<button class="btn btn-ghost btn-sm" data-copy-msg="${encodeURIComponent(m.text || "")}">${icon("copy", 11)} <span>复制</span></button>` : "") +
+        `</div>` +
+      `</article>`
+    );
+  }
+
+  const wsObj = (state.data?.workspaces || []).find((w) => w.id === m.workspaceId);
+  const plat = wsObj
+    ? formatPlatformShort(wsObj.client)
+    : {
+        code: /^[a-zA-Z0-9]/.test(m.sender || "") ? (m.sender || "AI").slice(0, 2).toUpperCase() : (m.sender || "AI").slice(0, 1),
+        cls: "codex",
+      };
+
+  const normId = (s) => String(s || "").replace(/[\s@_\-·]+/g, "").toLowerCase();
+  const sameIdentity = !m.workspaceName || normId(m.sender) === normId(m.workspaceName);
+  const authorLabel = sameIdentity ? (m.sender || "Agent") : `${m.sender} · ${m.workspaceName}`;
+
+  const modelBadgeHtml = m.modelSummary
+    ? `<span style="color:var(--text-muted);font-weight:400">·</span><span class="msg-model-badge">${escapeHtml(m.modelSummary)}</span>`
+    : "";
+
+  const isFailed = m.state === "Failed";
+  const showStatePill = m.state && m.state !== "Completed";
+  const stateCls =
+    m.state === "Running" ? "running" :
+    isFailed ? "danger" : "";
+  const liveBadgeText =
+    m.state === "Running" && m.activityStatus
+      ? m.activityStatus
+      : (m.stateText || m.state);
+
+  const canRetry = isFailed || m.state === "Cancelled" || m.state === "Interrupted";
+  const failoverHtml = m.failoverNotice
+    ? `<div class="failover-banner">${icon("zap", 12)} <span>${escapeHtml(m.failoverNotice)}</span></div>`
+    : "";
+
+  const { timelineHtml, changedPillHtml } = renderAgentTimelineBlock(m, userToggledThinkMap);
+
+  return (
+    `<article class="msg-card agent ${isFailed ? "is-failed" : ""}" data-msg-id="${escapeHtml(m.id)}">` +
+      `<div class="msg-head">` +
+        `<div class="msg-author">` +
+          `<span class="plat-badge ${plat.cls}" style="padding:2px 5px;border-radius:4px">${escapeHtml(plat.code)}</span>` +
+          `<span>${escapeHtml(authorLabel)}</span>` +
+          modelBadgeHtml +
+        `</div>` +
+        `<div class="msg-meta">` +
+          (showStatePill ? `<span class="tag ${stateCls}">${escapeHtml(liveBadgeText)}</span>` : "") +
+          (m.timeText ? `<span>${escapeHtml(m.timeText)}</span>` : "") +
+          `<span class="msg-hover-actions">` +
+            (canRetry ? `<button class="btn btn-ghost btn-sm" data-retry-msg="${escapeHtml(m.id)}" title="重试此轮指令">${icon("rotateCcw", 11)} <span>重试</span></button>` : "") +
+            (m.text ? `<button class="btn btn-ghost btn-sm" data-copy-msg="${encodeURIComponent(m.text || "")}">${icon("copy", 11)} <span>复制</span></button>` : "") +
+          `</span>` +
+        `</div>` +
+      `</div>` +
+      failoverHtml +
+      timelineHtml +
+      bodyHtml +
+      changedPillHtml +
+    `</article>`
+  );
+}
+
+function bindMessageCardListeners(cardEl, m, room) {
+  cardEl.querySelectorAll("details[data-think-msg]").forEach((det) => {
+    const body = det.querySelector(".ag-think-body");
+    if (det.open && body && m.state === "Running") {
+      body.scrollTop = body.scrollHeight;
+    }
+    det.addEventListener("toggle", () => {
+      userToggledThinkMap.set(det.dataset.thinkMsg, det.open);
+    });
+  });
+
+  cardEl.querySelectorAll("[data-open-turn-diff]").forEach((btn) => {
+    btn.onclick = () => {
+      state.diffOpen = true;
+      state.inspectorTab = "diff";
+      renderRoomHeader();
+      renderDiffDrawer();
+    };
+  });
+
+  cardEl.querySelectorAll("[data-tl-file]").forEach((row) => {
+    row.onclick = async () => {
+      const targetFile = decodeURIComponent(row.dataset.tlFile || "").replace(/\\/g, "/");
+      state.diffOpen = true;
+      state.inspectorTab = "diff";
+      renderRoomHeader();
+      const drawer = document.getElementById("diff-drawer");
+      const resizer = document.getElementById("diff-resizer");
+      if (drawer) drawer.style.display = "flex";
+      if (resizer) resizer.style.display = "";
+      await refreshRoomDiff();
+      const files = state.diffSnapshot?.files || [];
+      const hit = files.find((f) => f.filePath === targetFile || f.filePath.endsWith("/" + targetFile.split("/").pop()));
+      if (hit) {
+        state.diffSelectedFile = hit.filePath;
+        renderDiffDrawerContent();
+      }
+    };
+  });
+
+  cardEl.querySelectorAll("[data-tl-cmd-step]").forEach((row) => {
+    row.onclick = () => {
+      const key = row.dataset.tlCmdStep;
+      if (!key) return;
+      if (state.expandedCmdSteps.has(key)) state.expandedCmdSteps.delete(key);
+      else state.expandedCmdSteps.add(key);
+      cardEl.__renderSig = "";
+      renderChatStream(false);
+    };
+  });
+
+  cardEl.querySelectorAll("[data-copy-msg]").forEach((btn) => {
+    btn.onclick = () => {
+      navigator.clipboard?.writeText(decodeURIComponent(btn.dataset.copyMsg));
+      btn.textContent = "✓ 已复制";
+      showToast("success", "消息已复制到剪贴板");
+      setTimeout(() => { btn.textContent = "复制"; }, 1000);
+    };
+  });
+
+  cardEl.querySelectorAll("[data-edit-msg]").forEach((btn) => {
+    btn.onclick = () => {
+      const composer = document.getElementById("composer-input");
+      if (!composer) return;
+      composer.value = decodeURIComponent(btn.dataset.editMsg);
+      if (room?.id) state.roomDrafts.set(room.id, composer.value);
+      composer.focus();
+      composer.selectionStart = composer.selectionEnd = composer.value.length;
+    };
+  });
+
+  cardEl.querySelectorAll("[data-retry-msg]").forEach((btn) => {
+    btn.onclick = () => {
+      if (!room || room.isRunning) return;
+      const msgs = room.messages || [];
+      const idx = msgs.findIndex((x) => x.id === btn.dataset.retryMsg);
+      let prevUserText = "";
+      for (let k = (idx >= 0 ? idx : msgs.length - 1); k >= 0; k--) {
+        if (msgs[k]?.role === "User" && msgs[k]?.text) {
+          prevUserText = msgs[k].text;
+          break;
+        }
+      }
+      if (!prevUserText) return;
+      rpc("room.send", { roomId: room.id, text: prevUserText }).catch((err) => showToast("error", err.message));
+    };
+  });
+}
+
+function computeMessageRenderSig(m) {
+  const steps = m.steps || [];
+  const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+  const expandedForMsg = steps.filter((s) => state.expandedCmdSteps.has(`${m.id}:${s.id}`)).map((s) => s.id).join(",");
+  return [
+    m.id,
+    m.state,
+    m.stateText || "",
+    m.activityStatus || "",
+    m.workspaceName || "",
+    m.modelSummary || "",
+    m.failoverNotice || "",
+    m.thinkingText || "",
+    steps.length,
+    lastStep ? `${lastStep.id}:${lastStep.status}:${lastStep.meta || ""}:${lastStep.title || ""}` : "",
+    expandedForMsg,
+    m.text || "",
+    getUiLanguage(),
+  ].join("\u0001");
+}
 
 function renderChatStream(forceScrollBottom = false) {
   const stream = document.getElementById("chat-stream");
   const room = getCurrentRoom();
   if (!room) {
     stream.innerHTML = "";
+    stream.dataset.roomId = "";
     return;
   }
 
   const messages = room.messages || [];
   if (messages.length === 0) {
+    stream.dataset.roomId = room.id;
     const agents = room.agents || [];
     const firstTwo = agents.slice(0, 2).map((a) => `@${a.alias}`).join(" ");
     const projPath = getRoomProjectPath(room);
@@ -2413,7 +2905,7 @@ function renderChatStream(forceScrollBottom = false) {
     const primaryInfo = getPrimaryWorkspaceInfo(room);
     stream.innerHTML = `
       <div class="empty-hero">
-        <h2>📁 ${escapeHtml(projName)}</h2>
+        <h2 style="display:inline-flex;align-items:center;gap:8px">${icon("folder", 20)} <span>${escapeHtml(projName)}</span></h2>
         <p><span class="mono" style="font-size:11.5px">${escapeHtml(room.workingDirectory)}</span> · 当前主力：<strong>${escapeHtml(primaryInfo.name)}</strong>（直接输入即可像原版客户端一样在项目内读写操作，输入 <code>@</code> 可随时多智能体协作）</p>
         <div class="preset-grid">
           <div class="preset-card" data-preset="请查看当前项目目录结构；如果是新建空目录请帮我初始化工程骨架与基础配置，如果已有代码请梳理模块架构并列出下一步建议。" data-preset-en="Inspect the current project folder: if it is empty, scaffold a clean starter structure; if code already exists, map out the module architecture and suggest next steps.">
@@ -2443,88 +2935,71 @@ function renderChatStream(forceScrollBottom = false) {
       };
     });
     stream.querySelector('[data-action="open-term"]')?.addEventListener("click", () => document.getElementById("btn-toggle-term")?.click());
+    const pill = document.getElementById("btn-scroll-bottom");
+    if (pill) pill.style.display = "none";
     return;
   }
 
   const nearBottom = forceScrollBottom || stream.scrollHeight - stream.scrollTop - stream.clientHeight < 120;
 
-  stream.innerHTML = messages
-    .map((m) => {
-      const isUser = m.role === "User";
-      const avatarText = isUser ? "你" : (m.sender || "AI").slice(0, 2).toUpperCase();
-      const authorLabel = isUser ? "你" : `${m.sender} · ${m.workspaceName || "独立账号"}`;
-      const modelBadgeHtml = !isUser && m.modelSummary
-        ? `<span class="msg-model-badge">${escapeHtml(m.modelSummary)}</span>`
-        : "";
-      const stateCls =
-        m.state === "Running" ? "running" :
-        m.state === "Completed" ? "write" :
-        m.state === "Failed" ? "danger" : "";
-      const liveBadgeText =
-        m.state === "Running" && m.activityStatus
-          ? m.activityStatus
-          : (m.stateText || m.state);
+  // Incremental DOM reconciliation: preserve untouched .msg-card nodes so text selection is never lost during streaming!
+  if (stream.dataset.roomId !== room.id || stream.querySelector(".empty-hero")) {
+    stream.innerHTML = "";
+    stream.dataset.roomId = room.id;
+  }
 
-      const failoverHtml = m.failoverNotice
-        ? `<div class="failover-banner">⚡ ${escapeHtml(m.failoverNotice)}</div>`
-        : "";
+  const existingById = new Map();
+  Array.from(stream.querySelectorAll("article.msg-card[data-msg-id]")).forEach((el) => {
+    existingById.set(el.dataset.msgId, el);
+  });
 
-      const { timelineHtml, changedPillHtml } = isUser
-        ? { timelineHtml: "", changedPillHtml: "" }
-        : renderAgentTimelineBlock(m, userToggledThinkMap);
+  const validIds = new Set(messages.map((m) => m.id));
+  for (const [oldId, oldEl] of existingById.entries()) {
+    if (!validIds.has(oldId)) oldEl.remove();
+  }
 
-      const bodyHtml = m.text
-        ? `<div class="md-body">${renderMarkdown(m.text)}${m.state === "Running" ? `<span class="streaming-cursor"></span>` : ""}</div>`
-        : "";
-
-      return (
-        `<article class="msg-card ${isUser ? "user" : "agent"}" data-msg-id="${escapeHtml(m.id)}">` +
-          `<div class="msg-head">` +
-            `<div class="msg-author"><span class="role-avatar">${escapeHtml(avatarText)}</span><span>${escapeHtml(authorLabel)}</span>${modelBadgeHtml}</div>` +
-            `<div class="msg-meta">` +
-              `<span class="tag ${stateCls}">${escapeHtml(liveBadgeText)}</span>` +
-              `<span>${escapeHtml(m.timeText || "")}</span>` +
-              (m.text ? `<button class="btn btn-ghost btn-sm" data-copy-msg="${encodeURIComponent(m.text || "")}">复制</button>` : "") +
-            `</div>` +
-          `</div>` +
-          failoverHtml +
-          timelineHtml +
-          bodyHtml +
-          changedPillHtml +
-        `</article>`
-      );
-    })
-    .join("");
-
-  stream.querySelectorAll("details[data-think-msg]").forEach((det) => {
-    const body = det.querySelector(".ag-think-body");
-    if (det.open && body && messages.some((x) => x.id === det.dataset.thinkMsg && x.state === "Running")) {
-      body.scrollTop = body.scrollHeight;
+  let cursorEl = stream.firstElementChild;
+  for (const m of messages) {
+    const sig = computeMessageRenderSig(m);
+    let cardEl = existingById.get(m.id);
+    if (!cardEl) {
+      const temp = document.createElement("div");
+      temp.innerHTML = buildMessageCardHtml(m);
+      cardEl = temp.firstElementChild;
+      cardEl.__renderSig = sig;
+      bindMessageCardListeners(cardEl, m, room);
+      applyLanguageToRoot(cardEl);
+      stream.insertBefore(cardEl, cursorEl || null);
+    } else {
+      if (cardEl !== cursorEl) {
+        stream.insertBefore(cardEl, cursorEl || null);
+      }
+      if (cardEl.__renderSig !== sig) {
+        const temp = document.createElement("div");
+        temp.innerHTML = buildMessageCardHtml(m);
+        const freshEl = temp.firstElementChild;
+        freshEl.__renderSig = sig;
+        bindMessageCardListeners(freshEl, m, room);
+        applyLanguageToRoot(freshEl);
+        cardEl.replaceWith(freshEl);
+        cardEl = freshEl;
+      }
+      cursorEl = cardEl.nextElementSibling;
+      continue;
     }
-    det.addEventListener("toggle", () => {
-      userToggledThinkMap.set(det.dataset.thinkMsg, det.open);
-    });
-  });
-
-  stream.querySelectorAll("[data-open-turn-diff]").forEach((btn) => {
-    btn.onclick = () => {
-      state.diffOpen = true;
-      renderRoomHeader();
-      renderDiffDrawer();
-    };
-  });
-
-  stream.querySelectorAll("[data-copy-msg]").forEach((btn) => {
-    btn.onclick = () => {
-      navigator.clipboard?.writeText(decodeURIComponent(btn.dataset.copyMsg));
-      btn.textContent = "✓ 已复制";
-      showToast("success", "消息已复制到剪贴板");
-      setTimeout(() => { btn.textContent = "复制"; }, 1000);
-    };
-  });
+    cursorEl = cardEl.nextElementSibling;
+  }
 
   if (nearBottom) {
     stream.scrollTop = stream.scrollHeight;
+  }
+  const scrollPill = document.getElementById("btn-scroll-bottom");
+  if (scrollPill) {
+    const dist = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
+    scrollPill.style.display = dist > 160 ? "inline-flex" : "none";
+  }
+  if (state.diffOpen && state.inspectorTab === "trace") {
+    renderCommandInspectorTrace();
   }
 }
 
@@ -2555,9 +3030,9 @@ function renderAgentTimelineBlock(m, toggledThinkIds) {
   const hasThinking = !!(m.thinkingText && m.thinkingText.trim());
   const isRunning = m.state === "Running" || m.state === "Pending";
 
-  // Filter out internal request/thinking placeholder steps once actual thinking text or concrete tool steps exist
-  const concreteSteps = rawSteps.filter((s) => s.kind !== "thinking");
-  const visibleSteps = concreteSteps.length > 0 || hasThinking ? concreteSteps : rawSteps;
+  // Filter out internal request/thinking/system handshake steps once completed so transport plumbing never clutters chat replies
+  const concreteSteps = rawSteps.filter((s) => s.kind !== "thinking" && (s.kind !== "system" || s.status === "running"));
+  const visibleSteps = concreteSteps;
 
   if (!hasThinking && visibleSteps.length === 0 && !isRunning) {
     return { timelineHtml: "", changedPillHtml: "" };
@@ -2583,12 +3058,13 @@ function renderAgentTimelineBlock(m, toggledThinkIds) {
     .map((s) => {
       const running = s.status === "running";
       const failed = s.status === "failed";
-      const rowCls = `ag-tl-row ${running ? "is-running" : ""} ${failed ? "is-failed" : ""}`;
+      const baseCls = `ag-tl-row ${running ? "is-running" : ""} ${failed ? "is-failed" : ""}`;
+      const fileTarget = s.detail || s.target || "";
 
       if (s.kind === "read") {
         const verb = running ? "正在读取" : "已读取";
         return (
-          `<div class="${rowCls}" title="${escapeHtml(s.detail || s.target || s.title)}">` +
+          `<div class="${baseCls} is-interactive" data-tl-file="${encodeURIComponent(fileTarget || s.title)}" title="${escapeHtml(fileTarget || s.title)}">` +
             `<span class="ag-tl-verb">${verb}</span>` +
             renderFileLangBadge(s.target || s.title) +
             `<span class="ag-tl-file">${escapeHtml(s.target || s.title)}</span>` +
@@ -2600,7 +3076,7 @@ function renderAgentTimelineBlock(m, toggledThinkIds) {
       if (s.kind === "edit" || s.kind === "write") {
         const verb = s.kind === "write" ? (running ? "正在创建" : "已创建") : (running ? "正在修改" : "已修改");
         return (
-          `<div class="${rowCls}" title="${escapeHtml(s.detail || s.target || s.title)}">` +
+          `<div class="${baseCls} is-interactive" data-tl-file="${encodeURIComponent(fileTarget || s.title)}" title="${escapeHtml(fileTarget || s.title)}">` +
             `<span class="ag-tl-verb">${verb}</span>` +
             renderFileLangBadge(s.target || s.title) +
             `<span class="ag-tl-file">${escapeHtml(s.target || s.title)}</span>` +
@@ -2611,23 +3087,28 @@ function renderAgentTimelineBlock(m, toggledThinkIds) {
 
       if (s.kind === "command" || s.kind === "command_execution") {
         const cmdText = s.title || s.target || "command";
+        const stepKey = `${m.id}:${s.id}`;
+        const isExpanded = state.expandedCmdSteps.has(stepKey);
         const label = failed
           ? `Command failed (${escapeHtml(cmdText)})`
           : running
           ? `Running ${escapeHtml(cmdText)}`
           : escapeHtml(cmdText);
         return (
-          `<div class="${rowCls}" title="${escapeHtml(s.detail || cmdText)}">` +
-            `<span class="ag-cmd-icon">${running ? "⟳" : "&gt;_"}</span>` +
-            `<span class="ag-cmd-text">${label}</span>` +
-            (s.meta ? `<span class="ag-tl-meta danger">${escapeHtml(s.meta)}</span>` : `<span class="ag-cmd-chevron">›</span>`) +
+          `<div>` +
+            `<div class="${baseCls} is-interactive" data-tl-cmd-step="${escapeHtml(stepKey)}" title="${escapeHtml(s.detail || cmdText)}">` +
+              `<span class="ag-cmd-icon">${running ? "⟳" : "&gt;_"}</span>` +
+              `<span class="ag-cmd-text">${label}</span>` +
+              (s.meta ? `<span class="ag-tl-meta danger">${escapeHtml(s.meta)}</span>` : `<span class="ag-cmd-chevron">${isExpanded ? "▾" : "›"}</span>`) +
+            `</div>` +
+            (isExpanded ? `<div class="ag-cmd-detail">$ ${escapeHtml(s.detail || cmdText)}${s.meta ? `\n→ ${escapeHtml(s.meta)}` : ""}</div>` : "") +
           `</div>`
         );
       }
 
       if (s.kind === "search") {
         return (
-          `<div class="${rowCls}" title="${escapeHtml(s.detail || s.title)}">` +
+          `<div class="${baseCls}" title="${escapeHtml(s.detail || s.title)}">` +
             `<span class="ag-tl-verb">${running ? "正在检索" : "已检索"}</span>` +
             `<span class="ag-tl-file">${escapeHtml(s.target || s.title)}</span>` +
           `</div>`
@@ -2635,7 +3116,7 @@ function renderAgentTimelineBlock(m, toggledThinkIds) {
       }
 
       return (
-        `<div class="${rowCls}">` +
+        `<div class="${baseCls}">` +
           `<span class="ag-cmd-icon">${running ? "⟳" : "✓"}</span>` +
           `<span class="ag-cmd-text" style="font-family:var(--font-sans)">${escapeHtml(s.title)}</span>` +
         `</div>`
@@ -2823,24 +3304,36 @@ async function sendCurrentRoomMessage() {
     return;
   }
 
+  let attachments = undefined;
   if (state.designCaptures.length > 0) {
-    const contextBlocks = state.designCaptures.map((c, idx) => {
-      const cssText = JSON.stringify(c.computedStyles || {});
-      return (
-        `\n\n---\n### 附加前端 UI 点选元素 #${idx + 1}\n` +
-        `- 页面地址: ${c.url}\n` +
-        `- 选择器: \`${c.selector}\`\n` +
-        `- 尺寸位置: ${JSON.stringify(c.bounds || {})}\n` +
-        `- 关键计算样式: \`${cssText}\`\n` +
-        `\`\`\`html\n${c.outerHtml || ""}\n\`\`\``
-      );
-    });
-    text += contextBlocks.join("");
+    const imgPayloads = state.designCaptures
+      .filter((c) => c.screenshotDataUrl)
+      .map((c, idx) => ({
+        dataUrl: c.screenshotDataUrl,
+        label: c.selector || `UI Capture #${idx + 1}`,
+      }));
+    if (imgPayloads.length > 0) attachments = imgPayloads;
+
+    const domCaptures = state.designCaptures.filter((c) => c.outerHtml || c.url);
+    if (domCaptures.length > 0) {
+      const contextBlocks = domCaptures.map((c, idx) => {
+        const cssText = JSON.stringify(c.computedStyles || {});
+        return (
+          `\n\n---\n### 附加前端 UI 点选元素 #${idx + 1}\n` +
+          `- 页面地址: ${c.url || ""}\n` +
+          `- 选择器: \`${c.selector || "element"}\`\n` +
+          `- 尺寸位置: ${JSON.stringify(c.bounds || {})}\n` +
+          `- 关键计算样式: \`${cssText}\`\n` +
+          `\`\`\`html\n${c.outerHtml || ""}\n\`\`\``
+        );
+      });
+      text += contextBlocks.join("");
+    }
   }
 
   const sendBtn = document.getElementById("btn-send-msg");
   await runButtonAction(sendBtn, { busyText: "正在派单…", doneText: "✓ 已发送" }, async () => {
-    await rpc("room.send", { roomId: room.id, text });
+    await rpc("room.send", { roomId: room.id, text, attachments });
     composer.value = "";
     state.roomDrafts.set(room.id, "");
     state.designCaptures = [];
@@ -2940,16 +3433,121 @@ async function refreshRoomDiff() {
 
 function renderDiffDrawer() {
   const drawer = document.getElementById("diff-drawer");
+  const resizer = document.getElementById("diff-resizer");
   drawer.style.display = state.diffOpen ? "flex" : "none";
+  if (resizer) resizer.style.display = state.diffOpen ? "" : "none";
   if (state.diffOpen) {
     refreshRoomDiff().catch((err) => showToast("error", err.message));
   }
+}
+
+function renderCommandInspectorTrace() {
+  const traceEl = document.getElementById("cmd-inspector-trace");
+  if (!traceEl) return;
+  const room = getCurrentRoom();
+  const primaryWsId = getCurrentPrimaryWsId(room);
+  const pe = getPoolEntryMap().get(primaryWsId) || {};
+  const msgs = (room?.messages || []).filter((m) => m.role === "Agent");
+  const activeMsg = msgs.find((m) => m.state === "Running" || m.state === "Pending");
+  const latestMsg = activeMsg || msgs[msgs.length - 1] || null;
+  const steps = latestMsg?.steps || [];
+  const files = state.diffSnapshot?.files || [];
+  const isWorking = !!room?.isRunning || !!activeMsg;
+
+  traceEl.innerHTML = `
+    <div class="studio-hud-card ${isWorking ? "is-working" : ""}">
+      <div class="studio-hud-title">
+        <span>实时工作状态</span>
+        <span>${escapeHtml(latestMsg?.workspaceName || pe.displayName || "")}</span>
+      </div>
+      <div class="studio-live-banner">
+        <div class="studio-live-state" style="color:${isWorking ? "var(--accent-cyan)" : "var(--success)"}">
+          ${isWorking ? `<span class="studio-pulse-ring"></span><span>工作中</span>` : `<span class="pool-dot healthy" style="width:9px;height:9px"></span><span>空闲待命 · 随时响应</span>`}
+        </div>
+        ${isWorking && room ? `<button class="btn btn-danger btn-sm" id="cmd-insp-stop">■ 停止</button>` : ""}
+      </div>
+      <div style="font-size:11.5px;color:var(--text-secondary)">
+        ${escapeHtml(activeMsg?.activityStatus || room?.activityText || pe.statusText || "无头引擎在线待命")}
+      </div>
+    </div>
+    <div class="studio-hud-card">
+      <div class="studio-hud-title">
+        <span>实时执行与思考轨迹</span>
+        <span>${steps.length > 0 ? `${steps.length} 步` : "暂无"}</span>
+      </div>
+      <div class="studio-step-list">
+        ${
+          steps.length === 0
+            ? `<div style="font-size:11.5px;color:var(--text-muted)">发送指令后，此处将实时滚动展示该智能体的思考、文件读写与命令执行步骤</div>`
+            : steps
+                .map(
+                  (s) =>
+                    `<div class="studio-step-row ${s.status !== "completed" ? "running" : ""}">` +
+                      `<span style="flex-shrink:0;color:${s.status === "completed" ? "var(--success)" : "var(--accent-cyan)"}">${s.status === "completed" ? "✓" : "⟳"}</span>` +
+                      `<span>${escapeHtml(s.title)}</span>` +
+                    `</div>`
+                )
+                .join("")
+        }
+      </div>
+    </div>
+    <div class="studio-hud-card">
+      <div class="studio-hud-title">
+        <span>工作目录文件变更</span>
+        <span>${files.length}</span>
+      </div>
+      <div class="studio-file-list">
+        ${
+          files.length === 0
+            ? `<div style="font-size:11.5px;color:var(--text-muted)">工作区干净，暂无未提交文件改动</div>`
+            : files
+                .map(
+                  (f) =>
+                    `<div class="studio-file-row" data-insp-jump-file="${encodeURIComponent(f.filePath)}">` +
+                      `<span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.filePath)}</span>` +
+                      `<span class="mono" style="flex-shrink:0;font-size:11px"><span style="color:var(--success)">+${f.additions}</span> <span style="color:var(--danger)">-${f.deletions}</span></span>` +
+                    `</div>`
+                )
+                .join("")
+        }
+      </div>
+    </div>
+  `;
+  applyLanguageToRoot(traceEl);
+
+  document.getElementById("cmd-insp-stop")?.addEventListener("click", () => {
+    if (room) rpc("room.stop", { roomId: room.id });
+  });
+  traceEl.querySelectorAll("[data-insp-jump-file]").forEach((row) => {
+    row.onclick = () => {
+      state.inspectorTab = "diff";
+      state.diffSelectedFile = decodeURIComponent(row.dataset.inspJumpFile);
+      renderDiffDrawerContent();
+    };
+  });
 }
 
 function renderDiffDrawerContent() {
   if (!state.diffOpen) return;
   const snap = state.diffSnapshot;
   const room = getCurrentRoom();
+  const isTrace = state.inspectorTab === "trace";
+
+  document.getElementById("insp-tab-diff")?.classList.toggle("active", !isTrace);
+  document.getElementById("insp-tab-trace")?.classList.toggle("active", isTrace);
+  document.getElementById("btn-diff-unified").style.display = isTrace ? "none" : "";
+  document.getElementById("btn-diff-split").style.display = isTrace ? "none" : "";
+  document.getElementById("diff-files-strip").style.display = isTrace ? "none" : "flex";
+  document.getElementById("diff-body").style.display = isTrace ? "none" : "";
+  document.getElementById("diff-review-bar").style.display = isTrace ? "none" : "flex";
+  const traceEl = document.getElementById("cmd-inspector-trace");
+  if (traceEl) traceEl.style.display = isTrace ? "flex" : "none";
+
+  if (isTrace) {
+    document.getElementById("diff-title").textContent = "实时执行与思考轨迹";
+    renderCommandInspectorTrace();
+    return;
+  }
 
   document.getElementById("btn-diff-unified").classList.toggle("btn-primary", state.diffMode === "unified");
   document.getElementById("btn-diff-split").classList.toggle("btn-primary", state.diffMode === "split");
@@ -3070,6 +3668,7 @@ function renderArenaView() {
                   `<div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:13.5px">` +
                     `<span class="plat-badge ${plat.cls}">${plat.code}</span>` +
                     `<span>${isWinner ? "🏆 " : ""}${escapeHtml(c.label)} · ${escapeHtml(c.workspaceName)}</span>` +
+                    (c.model ? `<span class="msg-model-badge">${escapeHtml(c.model)}</span>` : "") +
                   `</div>` +
                   `<span class="tag ${c.state === "Running" ? "running" : c.state === "Completed" || isWinner ? "write" : ""}">${escapeHtml(c.state)} · ${c.durationSeconds || 0}s</span>` +
                 `</div>` +
@@ -3096,9 +3695,15 @@ function renderArenaView() {
 
       return (
         `<div>` +
-          `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">` +
+          `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">` +
             `<div><span style="font-size:14.5px;font-weight:700">${escapeHtml(s.title)}</span> <span style="font-size:11.5px;color:var(--text-muted);margin-left:8px">${escapeHtml(s.repositoryRoot)}</span></div>` +
-            (anyRunning ? `<button class="btn btn-danger btn-sm" data-arena-stop="${escapeHtml(s.id)}">■ 停止本场赛马</button>` : "") +
+            `<div style="display:flex;align-items:center;gap:6px">` +
+              (anyRunning
+                ? `<button class="btn btn-danger btn-sm" data-arena-stop="${escapeHtml(s.id)}">■ 停止本场赛马</button>`
+                : `<button class="btn btn-sm" data-arena-rerun="${escapeHtml(s.id)}">↻ 复用配置</button>` +
+                  `<button class="btn btn-sm" data-arena-cleanup="${escapeHtml(s.id)}">🧹 清理分支</button>` +
+                  `<button class="btn btn-ghost btn-sm" data-arena-delete="${escapeHtml(s.id)}">🗑 移除记录</button>`) +
+            `</div>` +
           `</div>` +
           `<div class="arena-grid">${cardsHtml}</div>` +
         `</div>`
@@ -3108,6 +3713,33 @@ function renderArenaView() {
 
   sessionsEl.querySelectorAll("[data-arena-stop]").forEach((btn) => {
     btn.onclick = () => runButtonAction(btn, { busyText: "停止中…", doneText: "已停止" }, () => rpc("arena.stop", { sessionId: btn.dataset.arenaStop }));
+  });
+  sessionsEl.querySelectorAll("[data-arena-rerun]").forEach((btn) => {
+    btn.onclick = () => {
+      const s = sessions.find((x) => x.id === btn.dataset.arenaRerun);
+      if (!s) return;
+      document.getElementById("arena-repo-input").value = s.repositoryRoot || "";
+      document.getElementById("arena-verify-input").value = s.verificationCommand || "";
+      document.getElementById("arena-prompt-input").value = s.prompt || "";
+      document.getElementById("arena-prompt-input").focus();
+      showToast("info", "已回填本场赛马配置，修改后可直接重新发车");
+    };
+  });
+  sessionsEl.querySelectorAll("[data-arena-cleanup]").forEach((btn) => {
+    btn.onclick = () =>
+      runButtonAction(btn, { busyText: "清理中…", doneText: "✓ 已清理" }, async () => {
+        const res = await rpc("arena.cleanup", { sessionId: btn.dataset.arenaCleanup, keepWinner: false });
+        if (res?.sessions && state.data) state.data.arenaSessions = res.sessions;
+        renderArenaView();
+      });
+  });
+  sessionsEl.querySelectorAll("[data-arena-delete]").forEach((btn) => {
+    btn.onclick = () =>
+      runButtonAction(btn, { busyText: "移除…", doneText: "✓" }, async () => {
+        const res = await rpc("arena.delete", { sessionId: btn.dataset.arenaDelete });
+        if (res?.sessions && state.data) state.data.arenaSessions = res.sessions;
+        renderArenaView();
+      });
   });
   sessionsEl.querySelectorAll("[data-arena-diff]").forEach((btn) => {
     btn.onclick = () =>
@@ -3139,6 +3771,9 @@ function renderArenaView() {
 
 function renderArenaContestantPicker() {
   const picker = document.getElementById("arena-contestants-picker");
+  if (document.activeElement && picker.contains(document.activeElement) && document.activeElement.tagName === "INPUT") {
+    return;
+  }
   const prevChecked = new Set(Array.from(picker.querySelectorAll("[data-arena-ws]:checked")).map((el) => el.dataset.arenaWs));
   const poolMap = getPoolEntryMap();
   const eligible = (state.data?.workspaces || [])
@@ -3150,6 +3785,22 @@ function renderArenaContestantPicker() {
       return bApi - aApi;
     });
   const directApiIds = eligible.filter((w) => w.client === "DirectApi" && poolMap.get(w.id)?.authReady).map((w) => w.id);
+
+  const extraHtml = state.arenaExtraSlots
+    .map((slot, idx) => {
+      const wsOpts = eligible
+        .map((w) => `<option value="${escapeHtml(w.id)}" ${w.id === slot.workspaceId ? "selected" : ""}>${escapeHtml(w.displayName)}</option>`)
+        .join("");
+      return (
+        `<span class="arena-slot-chip">` +
+          `<select class="arena-slot-effort" style="border-left:none" data-arena-extra-ws="${idx}">${wsOpts}</select>` +
+          `<input class="arena-slot-input" data-arena-extra-model="${idx}" value="${escapeHtml(slot.model || "")}" placeholder="模型覆盖(可选)" />` +
+          `<button type="button" class="btn btn-ghost btn-sm" style="padding:0 4px" data-arena-rm-extra="${idx}">✕</button>` +
+        `</span>`
+      );
+    })
+    .join("");
+
   picker.innerHTML =
     `<span style="font-size:12px;color:var(--text-secondary);font-weight:600">参赛后台账号：</span>` +
     eligible
@@ -3158,15 +3809,56 @@ function renderArenaContestantPicker() {
         const isChecked = prevChecked.size > 0
           ? prevChecked.has(w.id)
           : directApiIds.slice(0, 3).includes(w.id);
+        const savedModel = state.arenaSlotModels.get(w.id) ?? "";
         return (
-          `<label class="agent-chip" style="cursor:pointer">` +
-            `<input type="checkbox" data-arena-ws="${escapeHtml(w.id)}" ${isChecked ? "checked" : ""} />` +
-            `<span class="plat-badge ${plat.cls}">${plat.code}</span>` +
-            `<span>${escapeHtml(w.displayName)}</span>` +
-          `</label>`
+          `<span class="arena-slot-chip">` +
+            `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer">` +
+              `<input type="checkbox" data-arena-ws="${escapeHtml(w.id)}" ${isChecked ? "checked" : ""} />` +
+              `<span class="plat-badge ${plat.cls}">${plat.code}</span>` +
+              `<span>${escapeHtml(w.displayName)}</span>` +
+            `</label>` +
+            (isChecked
+              ? `<input class="arena-slot-input" data-arena-model-for="${escapeHtml(w.id)}" value="${escapeHtml(savedModel)}" placeholder="${escapeHtml(w.defaultModel || "模型覆盖(可选)")}" title="模型覆盖(可选)" />`
+              : "") +
+          `</span>`
         );
       })
-      .join("");
+      .join("") +
+    extraHtml +
+    (eligible.length > 0
+      ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-arena-add-slot" title="可为同一账号添加多个不同模型并发竞技">＋ 同号跨模槽位</button>`
+      : "");
+
+  picker.querySelectorAll("[data-arena-ws]").forEach((cb) => {
+    cb.onchange = () => renderArenaContestantPicker();
+  });
+  picker.querySelectorAll("[data-arena-model-for]").forEach((inp) => {
+    inp.oninput = () => state.arenaSlotModels.set(inp.dataset.arenaModelFor, inp.value.trim());
+  });
+  picker.querySelectorAll("[data-arena-extra-ws]").forEach((sel) => {
+    sel.onchange = () => {
+      const slot = state.arenaExtraSlots[Number(sel.dataset.arenaExtraWs)];
+      if (slot) slot.workspaceId = sel.value;
+    };
+  });
+  picker.querySelectorAll("[data-arena-extra-model]").forEach((inp) => {
+    inp.oninput = () => {
+      const slot = state.arenaExtraSlots[Number(inp.dataset.arenaExtraModel)];
+      if (slot) slot.model = inp.value.trim();
+    };
+  });
+  picker.querySelectorAll("[data-arena-rm-extra]").forEach((btn) => {
+    btn.onclick = () => {
+      state.arenaExtraSlots.splice(Number(btn.dataset.arenaRmExtra), 1);
+      renderArenaContestantPicker();
+    };
+  });
+  document.getElementById("btn-arena-add-slot")?.addEventListener("click", () => {
+    if (eligible.length === 0 || state.arenaExtraSlots.length >= 5) return;
+    const firstChecked = picker.querySelector("[data-arena-ws]:checked")?.dataset.arenaWs || eligible[0].id;
+    state.arenaExtraSlots.push({ workspaceId: firstChecked, model: "" });
+    renderArenaContestantPicker();
+  });
 }
 
 async function startArenaRace() {
@@ -3174,12 +3866,25 @@ async function startArenaRace() {
   const prompt = document.getElementById("arena-prompt-input").value.trim();
   const verify = document.getElementById("arena-verify-input").value.trim();
   const checked = Array.from(document.querySelectorAll("[data-arena-ws]:checked"));
-  if (checked.length < 2) {
-    throw new Error("请至少勾选 2 个参赛账号进行并行对比");
+  const rawEntries = [
+    ...checked.map((el) => {
+      const wsId = el.dataset.arenaWs;
+      const modelInp = document.querySelector(`[data-arena-model-for="${CSS.escape(wsId)}"]`);
+      const modelVal = (modelInp?.value ?? state.arenaSlotModels.get(wsId) ?? "").trim();
+      return { workspaceId: wsId, model: modelVal || null };
+    }),
+    ...state.arenaExtraSlots.map((s) => ({
+      workspaceId: s.workspaceId,
+      model: (s.model || "").trim() || null,
+    })),
+  ];
+  if (rawEntries.length < 2) {
+    throw new Error("请至少勾选或添加 2 个参赛槽位进行并行对比");
   }
-  const contestants = checked.map((el, i) => ({
+  const contestants = rawEntries.slice(0, 6).map((entry, i) => ({
     label: `方案 ${String.fromCharCode(65 + i)}`,
-    workspaceId: el.dataset.arenaWs,
+    workspaceId: entry.workspaceId,
+    model: entry.model,
   }));
   await rpc("arena.start", {
     title: prompt.slice(0, 26),
@@ -3366,7 +4071,7 @@ function renderFleetView() {
       <span class="fleet-stat-chip"><span class="pool-dot healthy"></span> 就绪 <strong>${pool.readyNodeCount ?? 0}/${pool.totalNodeCount ?? allWorkspaces.length}</strong></span>
       <span class="fleet-stat-chip">平均余量 <strong>${avgRem}</strong></span>
       <span class="fleet-stat-chip">累计流量 <strong>${formatTokensCompact(pool.totalSessionTokens || 0)}</strong> tok</span>
-      <span class="fleet-stat-chip">${visWin === 0 ? "👻 桌面零弹窗" : `👁 ${visWin} 窗可见`}</span>
+      <span class="fleet-stat-chip">${visWin === 0 ? `${icon("eyeOff", 12)} <span>桌面零弹窗</span>` : `${icon("eye", 12)} <span>${visWin} 窗可见</span>`}</span>
     `;
   }
 
@@ -3486,6 +4191,8 @@ function renderFleetView() {
           statusPillHtml = pRem != null && (w.client === "Codex" || pe.creditsUnlimited === false)
             ? `<span class="ac-status-pill ready">● 剩 ${pRem}%</span>`
             : `<span class="ac-status-pill ready">● 在线就绪</span>`;
+        } else if (w.client === "DirectApi") {
+          statusPillHtml = `<span class="ac-status-pill warn">○ 待配置密钥</span>`;
         } else {
           statusPillHtml = `<span class="ac-status-pill muted">○ ${(w.client === "MarketCli" || w.client === "Antigravity") && !cliBinaryReady ? "待装 CLI" : "待登录"}</span>`;
         }
@@ -3518,8 +4225,8 @@ function renderFleetView() {
           metersHtml = `
             <div class="slim-meter-row">
               <span class="slim-meter-label">${pe.creditsUnlimited ? "本地算力" : "API 通道"}</span>
-              <div class="quota-bar-track"><div class="quota-bar-fill" style="width:100%;background:${pe.creditsUnlimited ? "var(--success)" : "var(--accent-cyan)"}"></div></div>
-              <span class="slim-meter-val"><strong>${pe.creditsUnlimited ? "离线免额" : "按量计费"}</strong></span>
+              <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pe.authReady ? 100 : 18}%;background:${!pe.authReady ? "var(--warning)" : pe.creditsUnlimited ? "var(--success)" : "var(--accent-cyan)"}"></div></div>
+              <span class="slim-meter-val"><strong>${!pe.authReady ? "待配置密钥" : pe.creditsUnlimited ? "离线免额" : "按量计费"}</strong></span>
             </div>
           `;
         } else {
@@ -4190,9 +4897,9 @@ function openAddProfileModal(initialTab = "api", editRecord = null) {
     const tabsHtml = editRecord
       ? ""
       : `<div class="onboard-tabs">
-          <button class="onboard-tab ${activeTab === "api" ? "active" : ""}" data-wiz-tab="api">🚀 免下载直连 API 智能体（推荐）</button>
-          <button class="onboard-tab ${activeTab === "cli" ? "active" : ""}" data-wiz-tab="cli">⌨ 轻量级全市场 CLI 引擎</button>
-          <button class="onboard-tab ${activeTab === "desktop" ? "active" : ""}" data-wiz-tab="desktop">🖥 官方订阅桌面客户端托管</button>
+          <button class="onboard-tab ${activeTab === "api" ? "active" : ""}" data-wiz-tab="api">${icon("zap", 13)} <span>免下载直连 API 智能体（推荐）</span></button>
+          <button class="onboard-tab ${activeTab === "cli" ? "active" : ""}" data-wiz-tab="cli">${icon("terminal", 13)} <span>轻量级全市场 CLI 引擎</span></button>
+          <button class="onboard-tab ${activeTab === "desktop" ? "active" : ""}" data-wiz-tab="desktop">${icon("monitor", 13)} <span>官方订阅桌面客户端托管</span></button>
         </div>`;
 
     let contentHtml = "";
@@ -4205,15 +4912,12 @@ function openAddProfileModal(initialTab = "api", editRecord = null) {
       const defaultProto = editRecord?.agentKind === "DirectApi" && editRecord.presetId === apiPreset.id ? editRecord.protocol : apiPreset.protocol;
       const defaultBudget = editRecord?.tokenBudgetLimit || "";
 
-      const cardsHtml = apiPresets
+      const sidebarItemsHtml = apiPresets
         .map(
           (p) => `
-          <div class="provider-pill-card ${p.id === apiPreset.id ? "selected" : ""}" data-pick-api="${escapeHtml(p.id)}">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-              <strong style="font-size:12.5px">${escapeHtml(p.name)}</strong>
-              <span class="tag write">${escapeHtml(p.badge)}</span>
-            </div>
-            <div style="font-size:10.5px;color:var(--text-secondary)">${escapeHtml(p.description)}</div>
+          <div class="onboard-provider-item ${p.id === apiPreset.id ? "selected" : ""}" data-pick-api="${escapeHtml(p.id)}">
+            <span style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name)}</span>
+            <span class="tag write" style="padding:0 5px;font-size:9.5px">${escapeHtml(p.badge)}</span>
           </div>`
         )
         .join("");
@@ -4222,58 +4926,74 @@ function openAddProfileModal(initialTab = "api", editRecord = null) {
         .map((m) => `<button type="button" class="btn btn-ghost btn-sm" data-pick-model="${escapeHtml(m)}">${escapeHtml(m)}</button>`)
         .join("");
 
-      contentHtml = `
-        ${tabsHtml}
-        ${editRecord ? "" : `<div class="provider-pill-grid">${cardsHtml}</div>`}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">智能体名称（指挥舱 @ 称呼）</div>
-            <input id="ua-name" class="input" value="${escapeHtml(defaultName)}" placeholder="如：GeminiPro2 / DeepSeek架构师" />
-          </div>
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">通讯协议族</div>
-            <select id="ua-proto" class="select">
-              <option value="OpenAiCompatible" ${defaultProto === "OpenAiCompatible" ? "selected" : ""}>OpenAI 兼容协议 (/chat/completions)</option>
-              <option value="GeminiNative" ${defaultProto === "GeminiNative" ? "selected" : ""}>Google Gemini 原生协议 (:generateContent)</option>
-              <option value="AnthropicMessages" ${defaultProto === "AnthropicMessages" ? "selected" : ""}>Anthropic Messages 协议 (/v1/messages)</option>
-            </select>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:10px">
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">API Base URL</div>
-            <input id="ua-url" class="input mono" value="${escapeHtml(defaultUrl)}" />
-          </div>
-          <div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px">
-              <span style="font-weight:600">模型标识 (Model ID)</span>
-              <button type="button" class="btn btn-ghost btn-sm" id="ua-fetch-models-btn" style="padding:1px 6px;font-size:11px">↻ 实时拉取模型</button>
+      const detailFormHtml = `
+        <div class="onboard-detail-form">
+          <div style="padding:8px 11px;border-radius:var(--radius-sm);background:var(--bg-input);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div style="min-width:0">
+              <div style="font-size:12.5px;font-weight:700">${escapeHtml(apiPreset.name)}</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:1px">${escapeHtml(apiPreset.description)}</div>
             </div>
-            <input id="ua-model" list="ua-live-models-datalist" class="input mono" value="${escapeHtml(defaultModel)}" />
-            <datalist id="ua-live-models-datalist"></datalist>
+            <span class="tag write">${escapeHtml(apiPreset.badge)}</span>
           </div>
-        </div>
-        <div id="ua-model-chips-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${modelChips ? `<span style="font-size:11px;color:var(--text-muted)">推荐模型快选：</span>${modelChips}` : ""}</div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:10px">
+
           <div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px">
               <span style="font-weight:600">API Key（Windows DPAPI 本机硬件级加密存储）</span>
-              ${PORTAL_CONFIG.showApiGuideLink ? `<a href="#" id="ua-api-guide-link" style="font-size:11px;color:var(--accent-cyan);text-decoration:none;font-weight:600">🔑 获取 API 密钥与算力通道指南 ↗</a>` : ""}
+              ${PORTAL_CONFIG.showApiGuideLink ? `<a href="#" id="ua-api-guide-link" style="font-size:11px;color:var(--accent-cyan);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px">${icon("key", 11)} <span>获取 API 密钥与算力通道指南 ↗</span></a>` : ""}
             </div>
-            <input id="ua-key" type="password" class="input mono" placeholder="${editRecord?.hasApiKey ? `已加密保存 (${editRecord.maskedApiKey})，留空保持不变` : apiPreset.requiresApiKey ? "粘贴 sk-... / AIza... 密钥（绝不明文落盘）" : "本地 Ollama 模型可留空"}" />
+            <div class="input-with-eye">
+              <input id="ua-key" type="password" class="input mono" placeholder="${editRecord?.hasApiKey ? `已加密保存 (${editRecord.maskedApiKey})，留空保持不变` : apiPreset.requiresApiKey ? "粘贴 sk-... / AIza... 密钥（绝不明文落盘）" : "本地 Ollama 模型可留空"}" />
+              <button type="button" class="eye-toggle-btn" id="ua-toggle-key-vis" title="显示 / 隐藏密钥">${icon("eye", 14)}</button>
+            </div>
           </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:10px">
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">智能体名称（指挥舱 @ 称呼）</div>
+              <input id="ua-name" class="input" value="${escapeHtml(defaultName)}" placeholder="如：GeminiPro2 / DeepSeek架构师" />
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px">
+                <span style="font-weight:600">模型标识 (Model ID)</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="ua-fetch-models-btn" style="padding:1px 6px;font-size:11px">↻ 实时拉取模型</button>
+              </div>
+              <input id="ua-model" list="ua-live-models-datalist" class="input mono" value="${escapeHtml(defaultModel)}" />
+              <datalist id="ua-live-models-datalist"></datalist>
+            </div>
+          </div>
+
+          <div id="ua-model-chips-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${modelChips ? `<span style="font-size:11px;color:var(--text-muted)">推荐模型快选：</span>${modelChips}` : ""}</div>
+
+          <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:10px">
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">API Base URL</div>
+              <input id="ua-url" class="input mono" value="${escapeHtml(defaultUrl)}" />
+            </div>
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">通讯协议族</div>
+              <select id="ua-proto" class="select">
+                <option value="OpenAiCompatible" ${defaultProto === "OpenAiCompatible" ? "selected" : ""}>OpenAI 兼容协议 (/chat/completions)</option>
+                <option value="GeminiNative" ${defaultProto === "GeminiNative" ? "selected" : ""}>Google Gemini 原生协议 (:generateContent)</option>
+                <option value="AnthropicMessages" ${defaultProto === "AnthropicMessages" ? "selected" : ""}>Anthropic Messages 协议 (/v1/messages)</option>
+              </select>
+            </div>
+          </div>
+
           <div>
             <div style="font-weight:600;margin-bottom:4px">Token 预算上限（可选，用于电量条与自动换号）</div>
             <input id="ua-budget" type="number" class="input mono" value="${escapeHtml(String(defaultBudget))}" placeholder="留空按服务商官方计费/限额，如填 2000000" />
           </div>
         </div>
-        <div style="font-size:11px;color:var(--accent-cyan)">
-          ${
-            getUiLanguage() === "en"
-              ? `✨ <strong>Full Agent Tools Included:</strong> No desktop app required—built-in C# agent engine natively equips this model with <code>list_files</code>, <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, and headless <code>run_command</code>!`
-              : `✨ <strong>零客户端全功能赋能：</strong>此账号无需安装任何外部软件，指挥舱内置 C# Agent 引擎自动赋予其 <code>list_files</code>、<code>read_file</code>、<code>write_file</code>、<code>edit_file</code> 与无窗 <code>run_command</code> 全套实操能力！`
-          }
-        </div>
+      `;
+
+      contentHtml = `
+        ${tabsHtml}
+        ${editRecord
+          ? detailFormHtml
+          : `<div class="onboard-master-detail">
+               <div class="onboard-sidebar-list">${sidebarItemsHtml}</div>
+               ${detailFormHtml}
+             </div>`}
       `;
 
       footHtml = `
@@ -4283,71 +5003,78 @@ function openAddProfileModal(initialTab = "api", editRecord = null) {
       `;
     } else if (activeTab === "cli") {
       const defaultName = editRecord?.displayName || (getUiLanguage() === "en" ? `${cliPreset.badge.replace(/\s+/g, "")}-Isolated` : `${cliPreset.badge.replace(/\s+/g, "")}独立号`);
-      const cardsHtml = cliPresets
+      const cliSidebarHtml = cliPresets
         .map(
           (c) => `
-          <div class="provider-pill-card ${c.presetId === cliPreset.presetId ? "selected" : ""}" data-pick-cli="${escapeHtml(c.presetId)}">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-              <strong style="font-size:12.5px">${escapeHtml(c.name)}</strong>
-              <span class="tag ${c.installed ? "write" : "readonly"}">${c.installed ? "✓ 本机已就绪" : "⬇ 可一键安装"}</span>
-            </div>
-            <div style="font-size:10.5px;color:var(--text-secondary)">${escapeHtml(c.description)}</div>
+          <div class="onboard-provider-item ${c.presetId === cliPreset.presetId ? "selected" : ""}" data-pick-cli="${escapeHtml(c.presetId)}">
+            <span style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.name)}</span>
+            <span class="tag ${c.installed ? "write" : "readonly"}" style="padding:0 5px;font-size:9.5px">${c.installed ? "✓ 本机已就绪" : "⬇ 可一键安装"}</span>
           </div>`
         )
         .join("");
 
-      contentHtml = `
-        ${tabsHtml}
-        ${editRecord ? "" : `<div class="provider-pill-grid">${cardsHtml}</div>`}
-        <div class="battery-box" style="flex-direction:row;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:12px;font-weight:700">${cliPreset.installed ? `✅ 已检测到本机引擎：${escapeHtml(cliPreset.executablePath || cliPreset.badge)}` : `📦 尚未检测到 ${escapeHtml(cliPreset.badge)}，无需下载桌面客户端，可一键轻量安装：`}</div>
-            <div class="mono" style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(cliPreset.installCommand)}</div>
+      const cliDetailHtml = `
+        <div class="onboard-detail-form">
+          <div class="battery-box" style="flex-direction:row;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:12px;font-weight:700">${cliPreset.installed ? `✅ 已检测到本机引擎：${escapeHtml(cliPreset.executablePath || cliPreset.badge)}` : `📦 尚未检测到 ${escapeHtml(cliPreset.badge)}，无需下载桌面客户端，可一键轻量安装：`}</div>
+              <div class="mono" style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(cliPreset.installCommand)}</div>
+            </div>
+            ${
+              cliPreset.presetId !== "custom-cli"
+                ? `<button type="button" class="btn btn-sm ${cliPreset.installed ? "" : "btn-primary"}" id="ua-cli-install-btn">⬇ 在内置分屏终端一键安装 / 更新</button>`
+                : ""
+            }
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">智能体名称（每个实例分配独立隔离 HOME 目录）</div>
+              <input id="ua-cli-name" class="input" value="${escapeHtml(defaultName)}" />
+            </div>
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">指定模型（可选）</div>
+              <input id="ua-cli-model" class="input mono" value="${escapeHtml(editRecord?.model ?? cliPreset.defaultModel ?? "")}" placeholder="留空使用该 CLI 默认模型" />
+            </div>
           </div>
           ${
-            cliPreset.presetId !== "custom-cli"
-              ? `<button type="button" class="btn btn-sm ${cliPreset.installed ? "" : "btn-primary"}" id="ua-cli-install-btn">⬇ 在内置分屏终端一键安装 / 更新</button>`
+            cliPreset.presetId === "custom-cli" || editRecord?.customCliExecutable
+              ? `<div style="display:grid;grid-template-columns:1fr 1.3fr;gap:10px">
+                  <div>
+                    <div style="font-weight:600;margin-bottom:4px">自定义 CLI 可执行路径 / 命令</div>
+                    <input id="ua-cli-exe" class="input mono" value="${escapeHtml(editRecord?.customCliExecutable || "")}" placeholder="如 cursor-agent.cmd 或 C:\\tools\\my-agent.exe" />
+                  </div>
+                  <div>
+                    <div style="font-weight:600;margin-bottom:4px">参数模板（支持 {prompt} {model} {cwd} {sandbox}）</div>
+                    <input id="ua-cli-args" class="input mono" value="${escapeHtml(editRecord?.customCliArgsTemplate || "-p {prompt}")}" />
+                  </div>
+                </div>`
               : ""
           }
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">智能体名称（每个实例分配独立隔离 HOME 目录）</div>
-            <input id="ua-cli-name" class="input" value="${escapeHtml(defaultName)}" />
+          <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px">
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">专属 API Key 覆盖（可选，DPAPI 加密注入该 CLI 进程）</div>
+              <input id="ua-cli-key" type="password" class="input mono" placeholder="${editRecord?.hasApiKey ? `已加密保存 (${editRecord.maskedApiKey})，留空不变` : "留空则使用独立目录 OAuth 登录态"}" />
+            </div>
+            <div>
+              <div style="font-weight:600;margin-bottom:4px">自定义网关 Base URL（可选）</div>
+              <input id="ua-cli-url" class="input mono" value="${escapeHtml(editRecord?.baseUrl || "")}" placeholder="可选覆盖 API 端点" />
+            </div>
           </div>
           <div>
-            <div style="font-weight:600;margin-bottom:4px">指定模型（可选）</div>
-            <input id="ua-cli-model" class="input mono" value="${escapeHtml(editRecord?.model ?? cliPreset.defaultModel ?? "")}" placeholder="留空使用该 CLI 默认模型" />
+            <div style="font-weight:600;margin-bottom:4px">保留或指定账号主目录（可选 · 用于迁移原客户端目录）</div>
+            <input id="ua-cli-home" class="input mono" value="${escapeHtml(editRecord?.customHomeDirectory || "")}" placeholder="留空则自动创建独立隔离目录 data/universal-agents/..." />
           </div>
         </div>
-        ${
-          cliPreset.presetId === "custom-cli" || editRecord?.customCliExecutable
-            ? `<div style="display:grid;grid-template-columns:1fr 1.3fr;gap:10px">
-                <div>
-                  <div style="font-weight:600;margin-bottom:4px">自定义 CLI 可执行路径 / 命令</div>
-                  <input id="ua-cli-exe" class="input mono" value="${escapeHtml(editRecord?.customCliExecutable || "")}" placeholder="如 cursor-agent.cmd 或 C:\\tools\\my-agent.exe" />
-                </div>
-                <div>
-                  <div style="font-weight:600;margin-bottom:4px">参数模板（支持 {prompt} {model} {cwd} {sandbox}）</div>
-                  <input id="ua-cli-args" class="input mono" value="${escapeHtml(editRecord?.customCliArgsTemplate || "-p {prompt}")}" />
-                </div>
-              </div>`
-            : ""
-        }
-        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px">
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">专属 API Key 覆盖（可选，DPAPI 加密注入该 CLI 进程）</div>
-            <input id="ua-cli-key" type="password" class="input mono" placeholder="${editRecord?.hasApiKey ? `已加密保存 (${editRecord.maskedApiKey})，留空不变` : "留空则使用独立目录 OAuth 登录态"}" />
-          </div>
-          <div>
-            <div style="font-weight:600;margin-bottom:4px">自定义网关 Base URL（可选）</div>
-            <input id="ua-cli-url" class="input mono" value="${escapeHtml(editRecord?.baseUrl || "")}" placeholder="可选覆盖 API 端点" />
-          </div>
-        </div>
-        <div>
-          <div style="font-weight:600;margin-bottom:4px">保留或指定账号主目录（可选 · 用于迁移原客户端目录）</div>
-          <input id="ua-cli-home" class="input mono" value="${escapeHtml(editRecord?.customHomeDirectory || "")}" placeholder="留空则自动创建独立隔离目录 data/universal-agents/..." />
-        </div>
+      `;
+
+      contentHtml = `
+        ${tabsHtml}
+        ${editRecord
+          ? cliDetailHtml
+          : `<div class="onboard-master-detail">
+               <div class="onboard-sidebar-list">${cliSidebarHtml}</div>
+               ${cliDetailHtml}
+             </div>`}
       `;
 
       footHtml = `
@@ -4429,6 +5156,16 @@ function openAddProfileModal(initialTab = "api", editRecord = null) {
           if (PORTAL_CONFIG.apiGuideUrl) {
             rpc("shell.openUrl", { url: PORTAL_CONFIG.apiGuideUrl }).catch((err) => showToast("error", err.message));
           }
+        };
+      }
+      const toggleKeyVisBtn = document.getElementById("ua-toggle-key-vis");
+      if (toggleKeyVisBtn) {
+        toggleKeyVisBtn.onclick = () => {
+          const keyEl = document.getElementById("ua-key");
+          if (!keyEl) return;
+          const show = keyEl.type === "password";
+          keyEl.type = show ? "text" : "password";
+          toggleKeyVisBtn.innerHTML = show ? icon("eyeOff", 14) : icon("eye", 14);
         };
       }
 
@@ -4920,8 +5657,10 @@ function renderStudioView(forceScroll = false) {
   const shortFolder = (room?.workingDirectory || "").split(/[\\/]/).filter(Boolean).pop() || room?.workingDirectory || "";
   const locPill = room
     ? room.isIsolatedWorktree
-      ? `<span class="tag worktree" id="st-open-cwd" style="cursor:pointer" title="点击打开工作目录：${escapeHtml(room.workingDirectory)}">⑂ ${escapeHtml(room.worktreeBranch)}</span>`
-      : `<span class="tag" id="st-open-cwd" style="cursor:pointer" title="点击打开工作目录：${escapeHtml(room.workingDirectory)}">📁 ${escapeHtml(shortFolder)}</span>`
+      ? `<span class="tag worktree" id="st-open-cwd" style="cursor:pointer" title="点击打开工作目录：${escapeHtml(room.workingDirectory)}">${icon("branch", 11)} <span>${escapeHtml(room.worktreeBranch)}</span></span>`
+      : shortFolder
+      ? `<span class="tag" id="st-open-cwd" style="cursor:pointer" title="点击打开工作目录：${escapeHtml(room.workingDirectory)}">${icon("folder", 11)} <span>${escapeHtml(shortFolder)}</span></span>`
+      : ""
     : "";
 
   const liveTopPill = isWorking
@@ -4932,8 +5671,8 @@ function renderStudioView(forceScroll = false) {
 
   const wtBtnHtml = room
     ? room.isIsolatedWorktree
-      ? `<button class="btn btn-success btn-sm" id="st-merge-wt" ${room.isRunning ? "disabled" : ""}>⑂ 合并</button>`
-      : `<button class="btn btn-sm" id="st-spawn-wt" ${room.isRunning ? "disabled" : ""}>⑂ 分支</button>`
+      ? `<button class="btn btn-success btn-sm" id="st-merge-wt" ${room.isRunning ? "disabled" : ""}>${icon("merge", 12)} <span>合并</span></button>`
+      : `<button class="btn btn-sm" id="st-spawn-wt" ${room.isRunning ? "disabled" : ""}>${icon("branch", 12)} <span>分支</span></button>`
     : "";
 
   headerEl.innerHTML = `
@@ -4943,16 +5682,16 @@ function renderStudioView(forceScroll = false) {
         <span class="room-title">${escapeHtml(ws.displayName)}</span>
         ${liveTopPill}
         ${locPill}
-        ${room ? `<button class="btn btn-ghost btn-sm" id="st-switch-cwd" title="切换此对话的工作目录" ${room.isRunning ? "disabled" : ""}>📂</button>` : ""}
+        ${room ? `<button class="btn btn-ghost btn-sm" id="st-switch-cwd" title="切换此对话的工作目录" ${room.isRunning ? "disabled" : ""}>${icon("folderOpen", 13)}</button>` : ""}
       </div>
       <div class="room-toolbar">
         <div class="mode-segmented">
-          <button class="mode-seg-btn write ${state.studioMode === "chat" ? "active" : ""}" id="st-view-chat">💬 对话</button>
-          <button class="mode-seg-btn write ${state.studioMode === "tui" ? "active" : ""}" id="st-view-tui">🖥 终端</button>
+          <button class="mode-seg-btn write ${state.studioMode === "chat" ? "active" : ""}" id="st-view-chat">${icon("message", 11)} <span>对话</span></button>
+          <button class="mode-seg-btn write ${state.studioMode === "tui" ? "active" : ""}" id="st-view-tui">${icon("terminal", 11)} <span>终端</span></button>
         </div>
         ${wtBtnHtml}
-        <button class="btn btn-sm ${state.studioInspectorOpen ? "btn-primary" : ""}" id="st-toggle-insp" title="展开或收起右侧实时工作状态面板">📊 状态</button>
-        ${dedicatedRooms.length > 1 && room ? `<button class="btn btn-ghost btn-sm" id="st-del-room" ${room.isRunning ? "disabled" : ""} title="删除此专属对话">🗑</button>` : ""}
+        <button class="btn btn-sm ${state.studioInspectorOpen ? "btn-primary" : ""}" id="st-toggle-insp" title="展开或收起右侧实时工作状态面板">${icon("activity", 12)} <span>状态</span></button>
+        ${dedicatedRooms.length > 1 && room ? `<button class="btn btn-ghost btn-sm" id="st-del-room" ${room.isRunning ? "disabled" : ""} title="删除此专属对话">${icon("trash", 13)}</button>` : ""}
       </div>
     </div>
   `;
@@ -5061,8 +5800,8 @@ function renderStudioChatAndComposer(ws, room, pe, univ, forceScroll) {
 
   const isWrite = room.sandboxMode === "WorkspaceWrite";
   modeSwitch.innerHTML =
-    `<button class="mode-seg-btn write ${isWrite ? "active" : ""}" data-st-mode="WorkspaceWrite">🛠 Agent 读写</button>` +
-    `<button class="mode-seg-btn readonly ${!isWrite ? "active" : ""}" data-st-mode="ReadOnly">🔍 Ask 只读</button>`;
+    `<button class="mode-seg-btn write ${isWrite ? "active" : ""}" data-st-mode="WorkspaceWrite">${icon("wrench", 11)} <span>Agent 读写</span></button>` +
+    `<button class="mode-seg-btn readonly ${!isWrite ? "active" : ""}" data-st-mode="ReadOnly">${icon("search", 11)} <span>Ask 只读</span></button>`;
   modeSwitch.querySelectorAll("[data-st-mode]").forEach((btn) => {
     btn.onclick = () => {
       if (room.sandboxMode === btn.dataset.stMode) return;
@@ -5360,6 +6099,25 @@ function applySnapshot(snapshot, isInitial = false) {
 
 onHostEvent("state.snapshot", (snap) => applySnapshot(snap, false));
 
+onHostEvent("telemetry.tick", (tick) => {
+  if (!state.data || !tick) return;
+  if (tick.isLaunching !== undefined) state.data.isLaunching = tick.isLaunching;
+  if (tick.isPreparingSandboxes !== undefined) state.data.isPreparingSandboxes = tick.isPreparingSandboxes;
+  if (tick.sandboxStatusText !== undefined) state.data.sandboxStatusText = tick.sandboxStatusText;
+  if (tick.claudeCliAvailable !== undefined) state.data.claudeCliAvailable = tick.claudeCliAvailable;
+  if (tick.agyCliAvailable !== undefined) state.data.agyCliAvailable = tick.agyCliAvailable;
+  if (tick.stealth) state.data.stealth = tick.stealth;
+  if (tick.pool) state.data.pool = tick.pool;
+  if (tick.workspaces) state.data.workspaces = tick.workspaces;
+  if (tick.instances) state.data.instances = tick.instances;
+  if (tick.warnings) state.data.warnings = tick.warnings;
+
+  renderTopbarPool();
+  if (state.activeView === "fleet") renderFleetView();
+  else if (state.activeView === "studio") renderStudioView(false);
+  else if (state.activeView === "command") renderComposerFooterControls();
+});
+
 onHostEvent("pool.updated", (pool) => {
   if (!state.data) return;
   state.data.pool = pool;
@@ -5431,14 +6189,19 @@ window.__adeTestApi = {
   },
   openDiffWithSample: (sampleDiff) => {
     state.diffOpen = true;
+    state.inspectorTab = "diff";
     state.diffMode = "split";
     state.diffSnapshot = sampleDiff;
     document.getElementById("diff-drawer").style.display = "flex";
+    const resizer = document.getElementById("diff-resizer");
+    if (resizer) resizer.style.display = "";
     renderDiffDrawerContent();
   },
   previewCleanEmptyCommand: () => {
     state.diffOpen = false;
     document.getElementById("diff-drawer").style.display = "none";
+    const resizer = document.getElementById("diff-resizer");
+    if (resizer) resizer.style.display = "none";
     state.mentionMenu.open = false;
     renderMentionPopup();
     const composer = document.getElementById("composer-input");
@@ -5497,6 +6260,7 @@ window.__adeTestApi = {
     });
     document.querySelectorAll("input:not([type=password]):not([type=checkbox])").forEach((el) => {
       if (!isVisible(el)) return;
+      if (el.hasAttribute("data-ag-alias") || el.id === "ms-dir" || el.id === "m-room-dir" || el.id === "cp-parent-dir") return;
       if (cjk.test(el.value || "")) leaks.push(`VAL[${el.id}]: ${el.value}`);
     });
     return leaks.slice(0, 20);

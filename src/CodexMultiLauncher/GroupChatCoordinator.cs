@@ -496,7 +496,10 @@ public sealed class GroupChatCoordinator
             RoomUpdated?.Invoke(room);
     }
 
-    public async Task SendAsync(GroupChatRoom room, string text)
+    public Task SendAsync(GroupChatRoom room, string text) =>
+        SendAsync(room, text, attachments: null);
+
+    public async Task SendAsync(GroupChatRoom room, string text, IReadOnlyList<ChatImageAttachment>? attachments)
     {
         RoomRun run;
         List<(GroupChatRun Request, GroupChatMessage Reply)> requests;
@@ -540,14 +543,26 @@ public sealed class GroupChatCoordinator
             }
 
             if (!Directory.Exists(room.WorkingDirectory)) throw new InvalidOperationException("项目目录不存在，请先打开会话设置。");
+            var snapshotHistory = room.Messages.ToArray();
+            var safeAttachments = attachments is { Count: > 0 } ? attachments : null;
             requests = recipients.Select(agent =>
             {
                 var workspace = ResolveEffectiveWorkspace(agent, out var preflightNotice);
-                var prompt = GroupChatRouting.BuildPrompt(agent, room.Messages, text, room.SandboxMode);
+                var prompt = GroupChatRouting.BuildPrompt(agent, snapshotHistory, text, room.SandboxMode);
+                var incremental = GroupChatRouting.BuildIncrementalPrompt(agent, snapshotHistory, text);
+                var nativeTurns = GroupChatRouting.BuildNativeTurns(agent, snapshotHistory, text);
                 var modelSummary = _modelCatalog?.FormatModelSummary(workspace, agent)
                     ?? ModelCatalogService.FormatModelSummaryCore(null, workspace, agent);
                 return (
-                    new GroupChatRun(agent, workspace, room.WorkingDirectory, prompt, room.SandboxMode),
+                    new GroupChatRun(
+                        agent,
+                        workspace,
+                        room.WorkingDirectory,
+                        prompt,
+                        room.SandboxMode,
+                        IncrementalPrompt: incremental,
+                        Attachments: safeAttachments,
+                        NativeTurns: nativeTurns),
                     new GroupChatMessage
                     {
                         Role = ChatMessageRole.Agent,
@@ -644,7 +659,7 @@ public sealed class GroupChatCoordinator
                 {
                     _accountPool?.RecordFailoverSave();
                     triedWorkspaces.Add(fallbackWorkspace.Id);
-                    currentRequest = currentRequest with { Workspace = fallbackWorkspace };
+                    currentRequest = currentRequest with { Workspace = fallbackWorkspace, IncrementalPrompt = null };
                     lock (_gate)
                     {
                         reply.WorkspaceId = fallbackWorkspace.Id;
@@ -683,7 +698,7 @@ public sealed class GroupChatCoordinator
         failoverNotice = null;
         var primary = ResolveWorkspace(agent);
         if (_accountPool is null) return primary;
-        if (primary.Client is not (ClientKind.Codex or ClientKind.DirectApi or ClientKind.MarketCli)) return primary;
+        if (primary.Client is not (ClientKind.Codex or ClientKind.DirectApi or ClientKind.MarketCli or ClientKind.Antigravity or ClientKind.Claude)) return primary;
         var settings = _settingsProvider?.Invoke() ?? new UiSettings();
         if (!settings.AutoFailoverEnabled) return primary;
         if (!_accountPool.IsPreFlightExhausted(primary.Id, settings.FailoverThresholdPercent)) return primary;

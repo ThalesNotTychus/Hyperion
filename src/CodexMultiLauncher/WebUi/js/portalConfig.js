@@ -123,7 +123,15 @@ const EXACT_MAP = new Map([
   // Composer & Modes
   ["输入指令，或按 @ 点名任意智能体协同处理（Ctrl+Enter 发送）…", "Type a message, or press @ to mention specific agents (Enter to send)…"],
   ["🛠 Agent 读写", "🛠 Agent"],
+  ["Agent 读写", "Agent"],
   ["🔍 Ask 只读", "🔍 Ask"],
+  ["Ask 只读", "Ask"],
+  ["对话", "Chat"],
+  ["合并", "Merge"],
+  ["分支", "Branch"],
+  ["启动后台并行赛马", "Start Arena Run"],
+  ["桌面零弹窗", "Zero-Popup Stealth"],
+  ["获取 API 密钥与算力通道指南 ↗", "Get API Keys & Quota Channel Guide ↗"],
   ["全功能读写", "Agent Write"],
   ["只读分析", "Read-Only"],
   ["读写", "Write"],
@@ -331,9 +339,12 @@ const EXACT_MAP = new Map([
   // Universal Agent Hub (Add Account / Agent Modal)
   ["全市场智能体接入中心（免下载直连 API · 轻量级 CLI · 桌面后台托管）", "Add Account / Universal Agent Hub (Direct API · Lightweight CLI · Isolated Desktop)"],
   ["全市场智能体接入中心 (免下载直连 API · 轻量级 CLI · 桌面后台托管)", "Add Account / Universal Agent Hub (Direct API · Lightweight CLI · Isolated Desktop)"],
-  ["🚀 免下载直连 API 智能体（推荐）", "🚀 Zero-Download Direct API (Recommended)"],
+  ["🚀 免下载直连 API 智能体（推荐）", "🚀 Direct API (Recommended)"],
+  ["免下载直连 API 智能体（推荐）", "Direct API (Recommended)"],
   ["⌨ 轻量级全市场 CLI 引擎", "⌨ Lightweight CLI Engine"],
+  ["轻量级全市场 CLI 引擎", "Lightweight CLI Engine"],
   ["🖥 官方订阅桌面客户端托管", "🖥 Isolated Desktop Client"],
+  ["官方订阅桌面客户端托管", "Isolated Desktop Client"],
   ["智能体名称（指挥舱 @ 称呼）", "Agent Name (Display & @Mention Alias)"],
   ["通讯协议族", "API Protocol"],
   ["OpenAI 兼容协议 (/chat/completions)", "OpenAI Compatible (/chat/completions)"],
@@ -487,17 +498,73 @@ const EXACT_MAP = new Map([
   ["当前配置", "Configured"],
   ["推荐", "Default"],
   ["旗舰", "Flagship"],
+
+  // v0.0.2 Flagship UI Additions
+  ["窗口隐身", "Stealth On"],
+  ["隐身", "Stealth"],
+  ["搜索项目、对话或命令…", "Search projects, chats, or commands…"],
+  ["窗口已隐身", "Stealth On"],
+  ["窗口已显示", "Windows Shown"],
+  ["自动换号", "Auto-Failover"],
+  ["换号关", "Failover Off"],
+  ["已开启", "Enabled"],
+  ["预览", "Preview"],
+  ["预览开启", "Preview On"],
+  ["新建项目", "New Project"],
+  ["打开", "Open"],
+  ["新对话", "New Chat"],
+  ["独立分支", "Worktree"],
+  ["合并回主库", "Merge"],
+  ["合并", "Merge"],
+  ["分支", "Branch"],
+  ["终端", "Terminal"],
+  ["状态", "Status"],
+  ["Agent 读写", "Agent"],
+  ["Ask 只读", "Ask"],
+  ["协作", "Mention"],
+  ["全员", "All"],
+  ["接入", "Add"],
+  ["停止", "Stop"],
+  ["发送", "Send"],
+  ["↓ 回到底部", "↓ Latest"],
+  ["回到底部", "Latest"],
+  ["↻ 重试", "↻ Retry"],
+  ["重试", "Retry"],
+  ["✎ 编辑", "✎ Edit"],
+  ["编辑", "Edit"],
+  ["Diff 审查", "Diff Review"],
+  ["实时轨迹", "Live Trace"],
+  ["命令面板", "Command Palette"],
+  ["搜索命令…", "Commands…"],
+  ["没有匹配的命令或项目", "No matching commands or projects"],
+  ["选择服务商 / 引擎", "Select Provider / Engine"],
+  ["高级选填（协议 / Base URL / 预算上限）", "Advanced Options (Protocol / Base URL / Budget)"],
+  ["＋ 同号跨模槽位", "＋ Cross-Model Slot"],
+  ["同号跨模槽位", "Cross-Model Slot"],
+  ["已选参赛槽位：", "Active Slots:"],
+  ["🧹 清理分支", "🧹 Clean Worktrees"],
+  ["清理分支", "Clean Worktrees"],
+  ["↻ 复用配置", "↻ Load Config"],
+  ["复用配置", "Load Config"],
+  ["🗑 移除记录", "🗑 Remove"],
+  ["正在等待响应…", "Waiting for response…"],
+  ["○ 待配置密钥", "○ Set API Key"],
+  ["待配置密钥", "Set API Key"],
 ]);
 
 // Tier 2: Full-String Regex Rules for Structured Dynamic Strings
 const REGEX_RULES = [
+  [/^(\d+\/\d+)\s*就绪$/, (_, ratio) => `${ratio} Ready`],
+  [/^(\d+)\s*运行中$/, (_, n) => `${n} Running`],
+  [/^窗口(?:\s*\((\d+)\))?$/, (_, n) => (n ? `Windows (${n})` : "Windows")],
+  [/^向\s+(.+?)\s+发送消息，输入 @ 多智能体协作…$/, (_, name) => `Message ${name}, or type @ to collaborate…`],
   [/^(\d+\/\d+)\s*智能体就绪(?:\s*·\s*均余\s*(\d+%))?$/, (_, ratio, avg) => (avg ? `${ratio} Ready · Avg ${avg}` : `${ratio} Agents Ready`)],
-  [/^⚡\s*(\d+)\s*个任务执行中$/, (_, n) => `⚡ ${n} Task${n === "1" ? "" : "s"} Running`],
-  [/^👁\s*(\d+)\s*窗\s*·\s*隐身$/, (_, n) => `👁 ${n} Visible · Hide`],
-  [/^👁\s*窗口显示(?:\s*\((\d+)\))?$/, (_, n) => (n ? `👁 Windows (${n})` : "👁 Windows On")],
+  [/^(?:⚡\s*)?(\d+)\s*个任务执行中$/, (_, n) => `${n} Task${n === "1" ? "" : "s"} Running`],
+  [/^(?:👁\s*)?(\d+)\s*窗\s*·\s*隐身$/, (_, n) => `${n} Visible · Hide`],
+  [/^(?:👁\s*)?窗口显示(?:\s*\((\d+)\))?$/, (_, n) => (n ? `Windows (${n})` : "Windows On")],
   [/^(\d+)\s*个文件已更改$/, (_, n) => `${n} file${n === "1" ? "" : "s"} changed`],
-  [/^👁\s*(\d+)\s*窗可见$/, (_, n) => `👁 ${n} Window${n === "1" ? "" : "s"} Visible`],
-  [/^👻\s*桌面零弹窗$/, () => "👻 Zero-Popup Stealth"],
+  [/^(?:👁\s*)?(\d+)\s*窗可见$/, (_, n) => `${n} Window${n === "1" ? "" : "s"} Visible`],
+  [/^(?:👻\s*)?桌面零弹窗$/, () => "Zero-Popup Stealth"],
   [/^就绪\s*(\d+\/\d+)?$/, (_, r) => (r ? `Ready ${r}` : "Ready ")],
   [/^平均余量\s*(\d+%)?$/, (_, p) => (p ? `Avg Quota ${p}` : "Avg Quota ")],
   [/^累计流量\s*(.+)?$/, (_, t) => (t ? `Traffic ${t}` : "Traffic ")],
@@ -593,17 +660,25 @@ const PHRASE_RULES = [
   [/触发限流保护：(.+?)\s*→\s*已自动接力至\s*(.+?)，上下文与 Worktree 保持不变/g, "Auto-Failover: $1 → seamlessly switched to $2 (context & worktree preserved)"],
   [/▸\s*高级运维与底层守护进程（当前驻留进程\s*(\d+)\s*个\s*·\s*(.+)）/g, "▸ Process & Sandbox Diagnostics ($1 active processes · $2)"],
   [/全部受管 Codex 账号多开沙箱就绪（unelevated 隔离令牌）。?/g, "All managed Codex sandboxes ready (isolated token)"],
-  [/正在检查受管账号多开沙箱\.{0,3}/g, "Checking multi-account sandboxes…"],
+  [/正在检查受管账号多开沙箱[….]*/g, "Checking multi-account sandboxes…"],
   [/已修复\s*(\d+)\s*个受管账号的多开沙箱配置并保留备份。?/g, "Repaired $1 managed sandbox(es) with backup"],
   [/沙箱就绪/g, "Sandboxes ready"],
 
   // Subtitles, Option Suffixes & Mixed Fragments
   [/Antigravity（反重力）\s*·\s*隔离数据目录/g, "Antigravity · Isolated Profile"],
   [/Antigravity（反重力）\s*·\s*系统默认目录/g, "Antigravity · Default Profile"],
+  [/Antigravity（反重力）\s*·\s*原始官方数据目录/g, "Antigravity · Default Official Profile"],
   [/Claude\s*·\s*隔离数据目录/g, "Claude · Isolated Profile"],
   [/Claude\s*·\s*系统默认目录/g, "Claude · Default Profile"],
+  [/Claude\s*·\s*原始官方数据目录/g, "Claude · Default Official Profile"],
   [/Codex\s*·\s*隔离数据目录/g, "Codex · Isolated Profile"],
   [/Codex\s*·\s*系统默认目录/g, "Codex · Default Profile"],
+  [/Codex\s*·\s*原始官方数据目录/g, "Codex · Default Official Profile"],
+  [/原始官方数据目录/g, "Default Official Profile"],
+  [/原始官方目录/g, "Default Official Folder"],
+  [/独立 CLI 沙箱目录/g, "Isolated CLI Sandbox"],
+  [/DPAPI 加密直连\s*·\s*零客户端体积/g, "DPAPI Direct API · Zero Client Footprint"],
+  [/待配置密钥\s*·\s*点击编辑填入 API Key/g, "API key required · Click Edit to configure"],
   [/隔离数据目录/g, "Isolated Profile"],
   [/系统默认目录/g, "Default Profile"],
   [/·\s*待登录/g, "· Sign In"],
@@ -698,7 +773,7 @@ const PHRASE_RULES = [
   [/官方 `agy acp` 默认旗舰推理模型/g, "Official `agy acp` flagship reasoning model"],
   [/官方 `agy acp` 高速低延迟推理通道/g, "Official `agy acp` fast low-latency model"],
   [/官方 `agy acp` 极轻量响应通道/g, "Official `agy acp` ultra-lightweight model"],
-  [/就绪/g, "Ready"],
+  [/官方 `agy acp` (?:就绪|Ready) · 按订阅周期限额/g, "Official `agy acp` ready · Plan-limited"],
   [/Flash \(极速响应\)/g, "Flash (Fast)"],
   [/Flash Lite \(超轻量\)/g, "Flash Lite"],
   [/Claude Sonnet \(自动最新主力\)/g, "Claude Sonnet (Latest)"],
@@ -789,10 +864,21 @@ const PHRASE_RULES = [
   [/已切换界面风格：/g, "Theme switched to: "],
 
   // Short Demo / Default Account Names (evaluated last so full placeholder phrases match first!)
+  [/快速跳转项目、会话、视图或执行命令…/g, "Jump to project, thread, view, or run command…"],
+  [/切换侧边栏 \(Ctrl\+B\)/g, "Toggle Sidebar (Ctrl+B)"],
+  [/打开快速命令面板 \(Ctrl\+K\)/g, "Open Command Palette (Ctrl+K)"],
+  [/加宽 \/ 还原面板/g, "Widen / Restore Drawer"],
+  [/显示 \/ 隐藏密钥/g, "Show / Hide API Key"],
+  [/重试此轮指令/g, "Retry this turn"],
+  [/编辑并重新发送/g, "Edit and resend"],
+  [/模型覆盖\(可选\)/g, "Model override (optional)"],
+  [/可为同一账号添加多个不同模型并发竞技/g, "Add multiple model slots on the same account to benchmark models head-to-head"],
+  [/已发送指令，正在连接智能体并开始思考…/g, "Connecting to agent and starting reasoning…"],
   [/账号\s*(\d+)/g, "Account $1"],
   [/反重力主力号/g, "Antigravity Primary"],
   [/反重力二号/g, "Antigravity Backup"],
   [/原始反重力/g, "Antigravity Default"],
+  [/原始\s*Antigravity/g, "Antigravity Default"],
   [/原始\s*Codex/g, "Codex Default"],
   [/原始\s*Claude/g, "Claude Default"],
   [/新账号/g, "New Account"],
@@ -802,6 +888,7 @@ const PHRASE_RULES = [
   [/GeminiPro直连/g, "GeminiPro Direct"],
   [/DeepSeek架构师/g, "DeepSeek Architect"],
   [/OpenCode终端/g, "OpenCode CLI"],
+  [/就绪/g, "Ready"],
 ];
 
 function applyPhraseRules(str) {
@@ -867,9 +954,9 @@ export function applyLanguageToRoot(rootEl) {
       const parent = node.parentElement;
       if (!parent) continue;
       const parentTag = parent.tagName;
-      if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "CODE" || parentTag === "PRE") continue;
+      if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "CODE" || parentTag === "PRE" || parentTag === "SVG") continue;
       if (parent.id === "btn-toggle-lang") continue;
-      if (parent.closest(".diff-code, .xterm")) continue;
+      if (parent.closest(".diff-code, .xterm, svg")) continue;
       if (parent.closest(".md-body") && !parent.hasAttribute("data-copy-code")) continue;
 
       if (currentLang === "en") {
@@ -889,8 +976,14 @@ export function applyLanguageToRoot(rootEl) {
       }
     }
 
+    const withSelf = (selector) => {
+      const list = rootEl.querySelectorAll ? Array.from(rootEl.querySelectorAll(selector)) : [];
+      if (rootEl.matches?.(selector)) list.unshift(rootEl);
+      return list;
+    };
+
     // Translate placeholders (including dynamically updated composer placeholder!)
-    rootEl.querySelectorAll?.("input[placeholder], textarea[placeholder]").forEach((el) => {
+    withSelf("input[placeholder], textarea[placeholder]").forEach((el) => {
       if (currentLang === "en") {
         if (el.__origPh === undefined || el.placeholder !== el.__lastEnPh) {
           el.__origPh = el.placeholder;
@@ -906,7 +999,7 @@ export function applyLanguageToRoot(rootEl) {
     });
 
     // Translate hover tooltips (`title` attributes)
-    rootEl.querySelectorAll?.("[title]").forEach((el) => {
+    withSelf("[title]").forEach((el) => {
       if (el.id === "btn-toggle-lang") return;
       if (currentLang === "en") {
         if (el.__origTitle === undefined || el.title !== el.__lastEnTitle) {
@@ -922,7 +1015,7 @@ export function applyLanguageToRoot(rootEl) {
       }
     });
     // Translate <optgroup label="...">
-    rootEl.querySelectorAll?.("optgroup[label]").forEach((el) => {
+    withSelf("optgroup[label]").forEach((el) => {
       if (currentLang === "en") {
         if (el.__origLbl === undefined || el.label !== el.__lastEnLbl) {
           el.__origLbl = el.label;
@@ -944,9 +1037,49 @@ export function applyLanguageToRoot(rootEl) {
 export function installI18nObserver() {
   if (observerInstalled) return;
   observerInstalled = true;
-  const obs = new MutationObserver(() => {
+  const pendingRoots = new Set();
+  let flushScheduled = false;
+
+  const flushPending = () => {
+    flushScheduled = false;
+    if (isApplying || currentLang !== "en" || pendingRoots.size === 0) {
+      pendingRoots.clear();
+      return;
+    }
+    const roots = Array.from(pendingRoots);
+    pendingRoots.clear();
+    for (const r of roots) {
+      if (!r.isConnected) continue;
+      // Skip if an ancestor of r is already in this batch
+      if (roots.some((other) => other !== r && other.contains?.(r))) continue;
+      applyLanguageToRoot(r);
+    }
+  };
+
+  const obs = new MutationObserver((mutations) => {
     if (isApplying || currentLang !== "en") return;
-    applyLanguageToRoot(document.body);
+    for (const m of mutations) {
+      if (m.type === "attributes" && m.target?.nodeType === 1) {
+        pendingRoots.add(m.target);
+      } else if (m.type === "characterData" && m.target?.parentElement) {
+        pendingRoots.add(m.target.parentElement);
+      } else if (m.type === "childList") {
+        let anyElement = false;
+        for (const n of m.addedNodes) {
+          if (n.nodeType === 1) {
+            pendingRoots.add(n);
+            anyElement = true;
+          }
+        }
+        if (!anyElement && m.target?.nodeType === 1) {
+          pendingRoots.add(m.target);
+        }
+      }
+    }
+    if (pendingRoots.size > 0 && !flushScheduled) {
+      flushScheduled = true;
+      queueMicrotask(flushPending);
+    }
   });
   obs.observe(document.body, {
     childList: true,

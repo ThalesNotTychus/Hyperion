@@ -143,6 +143,20 @@ public static class DpapiSecretProtector
         }
     }
 
+    public static bool CanUnprotect(string? protectedValue)
+    {
+        if (string.IsNullOrWhiteSpace(protectedValue) || !protectedValue.StartsWith(Prefix, StringComparison.Ordinal))
+            return false;
+        try
+        {
+            return !string.IsNullOrWhiteSpace(Unprotect(protectedValue));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static string? Mask(string? plaintext)
     {
         if (string.IsNullOrWhiteSpace(plaintext)) return null;

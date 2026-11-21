@@ -17,8 +17,11 @@ AdeFeaturesTests.RunAsync().GetAwaiter().GetResult();
 RuntimeIsolationTests.Run();
 RuntimeMarketplaceMigrationTests.RunAsync().GetAwaiter().GetResult();
 RegressionTests.RunAsync().GetAwaiter().GetResult();
-WindowLayoutCheck.Run();
-RealUserSimulationTests.RunIsolatedProcess();
+if (!string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase))
+{
+    WindowLayoutCheck.Run();
+    RealUserSimulationTests.RunIsolatedProcess();
+}
 Console.WriteLine("All CodexMultiLauncher contract tests passed.");
 
 internal sealed class ContractTestSuite

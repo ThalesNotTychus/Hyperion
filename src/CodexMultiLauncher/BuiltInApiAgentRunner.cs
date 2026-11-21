@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace CodexMultiLauncher;
 
@@ -16,7 +17,7 @@ public sealed record ApiConnectionTestResult(bool Ok, long LatencyMs, string Sum
 /// </summary>
 public sealed class BuiltInApiAgentRunner : IGroupChatRunner
 {
-    private const int MaxToolIterations = 12;
+    private const int MaxToolIterations = 32;
     private static readonly HttpClient SharedHttp = new(new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(2),
@@ -104,9 +105,171 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
         $"""
         你是运行在「Hyperion · 项目工作台」中的全功能研发智能体。
         当前绑定的本地项目目录为：{workingDirectory}
-        当前权限模式：{(writable ? "Agent 可读写实操模式（可使用 list_files / read_file / write_file / edit_file / run_command 直接阅读和修改项目代码并运行验证命令）" : "Ask 只读分析模式（可使用 list_files / read_file 阅读真实代码，严禁修改文件）")}。
+        当前权限模式：{(writable ? "Agent 可读写实操模式（可使用 list_files / search_files / read_file / write_file / edit_file / run_command 直接阅读和修改项目代码并运行验证命令）" : "Ask 只读分析模式（可使用 list_files / search_files / read_file 阅读与搜索真实代码，严禁修改文件）")}。
         请保持原汁原味、清晰简洁的表达与 GitHub 风格 Markdown。在需要查看或修改项目文件时主动调用工具，不要凭空猜测文件内容。
         """;
+
+    private static JsonArray BuildOpenAiInitialMessages(string systemPrompt, GroupChatRun request)
+    {
+        var messages = new JsonArray
+        {
+            new JsonObject { ["role"] = "system", ["content"] = systemPrompt },
+        };
+
+        var turns = request.NativeTurns;
+        if (turns is { Count: > 0 })
+        {
+            for (var i = 0; i < turns.Count - 1; i++)
+            {
+                messages.Add(new JsonObject
+                {
+                    ["role"] = turns[i].Role == "assistant" ? "assistant" : "user",
+                    ["content"] = turns[i].Text,
+                });
+            }
+        }
+
+        var lastUserText = turns is { Count: > 0 } ? turns[^1].Text : request.Prompt;
+        if (request.Attachments is { Count: > 0 })
+        {
+            var contentArr = new JsonArray
+            {
+                new JsonObject { ["type"] = "text", ["text"] = lastUserText },
+            };
+            foreach (var att in request.Attachments)
+            {
+                if (string.IsNullOrWhiteSpace(att.Base64Data)) continue;
+                var mime = string.IsNullOrWhiteSpace(att.MimeType) ? "image/png" : att.MimeType;
+                contentArr.Add(new JsonObject
+                {
+                    ["type"] = "image_url",
+                    ["image_url"] = new JsonObject { ["url"] = $"data:{mime};base64,{att.Base64Data}" },
+                });
+            }
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = contentArr });
+        }
+        else
+        {
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = lastUserText });
+        }
+
+        return messages;
+    }
+
+    private static JsonArray BuildAnthropicInitialMessages(GroupChatRun request)
+    {
+        var messages = new JsonArray();
+        var turns = request.NativeTurns;
+
+        void AppendTurn(string role, JsonNode content)
+        {
+            if (messages.Count > 0 && messages[^1] is JsonObject prev && prev["role"]?.GetValue<string>() == role)
+            {
+                // Coalesce consecutive same-role turns as Anthropic Messages API requires alternating roles
+                var prevBlocks = prev["content"] as JsonArray;
+                if (prevBlocks is null)
+                {
+                    prevBlocks = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = prev["content"]?.GetValue<string>() ?? string.Empty } };
+                    prev["content"] = prevBlocks;
+                }
+                if (content is JsonArray nextArr)
+                {
+                    foreach (var item in nextArr) prevBlocks.Add(item?.DeepClone());
+                }
+                else
+                {
+                    prevBlocks.Add(new JsonObject { ["type"] = "text", ["text"] = content.GetValue<string>() });
+                }
+                return;
+            }
+            messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
+        }
+
+        if (turns is { Count: > 1 })
+        {
+            for (var i = 0; i < turns.Count - 1; i++)
+            {
+                var role = turns[i].Role == "assistant" ? "assistant" : "user";
+                if (messages.Count == 0 && role == "assistant") continue;
+                AppendTurn(role, JsonValue.Create(turns[i].Text)!);
+            }
+        }
+
+        var lastUserText = turns is { Count: > 0 } ? turns[^1].Text : request.Prompt;
+        if (request.Attachments is { Count: > 0 })
+        {
+            var blocks = new JsonArray();
+            foreach (var att in request.Attachments)
+            {
+                if (string.IsNullOrWhiteSpace(att.Base64Data)) continue;
+                blocks.Add(new JsonObject
+                {
+                    ["type"] = "image",
+                    ["source"] = new JsonObject
+                    {
+                        ["type"] = "base64",
+                        ["media_type"] = string.IsNullOrWhiteSpace(att.MimeType) ? "image/png" : att.MimeType,
+                        ["data"] = att.Base64Data,
+                    },
+                });
+            }
+            blocks.Add(new JsonObject { ["type"] = "text", ["text"] = lastUserText });
+            AppendTurn("user", blocks);
+        }
+        else
+        {
+            AppendTurn("user", JsonValue.Create(lastUserText)!);
+        }
+
+        return messages;
+    }
+
+    private static JsonArray BuildGeminiInitialContents(GroupChatRun request)
+    {
+        var contents = new JsonArray();
+        var turns = request.NativeTurns;
+
+        void AppendGeminiTurn(string role, JsonArray parts)
+        {
+            if (contents.Count > 0 && contents[^1] is JsonObject prev && prev["role"]?.GetValue<string>() == role && prev["parts"] is JsonArray prevParts)
+            {
+                foreach (var p in parts) prevParts.Add(p?.DeepClone());
+                return;
+            }
+            contents.Add(new JsonObject { ["role"] = role, ["parts"] = parts });
+        }
+
+        if (turns is { Count: > 1 })
+        {
+            for (var i = 0; i < turns.Count - 1; i++)
+            {
+                var role = turns[i].Role == "assistant" ? "model" : "user";
+                if (contents.Count == 0 && role == "model") continue;
+                AppendGeminiTurn(role, new JsonArray { new JsonObject { ["text"] = turns[i].Text } });
+            }
+        }
+
+        var lastUserText = turns is { Count: > 0 } ? turns[^1].Text : request.Prompt;
+        var lastParts = new JsonArray();
+        if (request.Attachments is { Count: > 0 })
+        {
+            foreach (var att in request.Attachments)
+            {
+                if (string.IsNullOrWhiteSpace(att.Base64Data)) continue;
+                lastParts.Add(new JsonObject
+                {
+                    ["inlineData"] = new JsonObject
+                    {
+                        ["mimeType"] = string.IsNullOrWhiteSpace(att.MimeType) ? "image/png" : att.MimeType,
+                        ["data"] = att.Base64Data,
+                    },
+                });
+            }
+        }
+        lastParts.Add(new JsonObject { ["text"] = lastUserText });
+        AppendGeminiTurn("user", lastParts);
+        return contents;
+    }
 
     private sealed class StreamedToolCallBuilder
     {
@@ -128,11 +291,7 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
         CancellationToken token)
     {
         var endpoint = NormalizeOpenAiEndpoint(baseUrl);
-        var messages = new JsonArray
-        {
-            new JsonObject { ["role"] = "system", ["content"] = systemPrompt },
-            new JsonObject { ["role"] = "user", ["content"] = request.Prompt },
-        };
+        var messages = BuildOpenAiInitialMessages(systemPrompt, request);
 
         var tools = allowTools ? BuildOpenAiToolsJson(writable) : null;
         var stepSeq = 0;
@@ -541,10 +700,7 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
                 ? trimmed + "/messages"
                 : trimmed + "/v1/messages";
 
-        var messages = new JsonArray
-        {
-            new JsonObject { ["role"] = "user", ["content"] = request.Prompt },
-        };
+        var messages = BuildAnthropicInitialMessages(request);
         var tools = allowTools ? BuildAnthropicToolsJson(writable) : null;
         var stepSeq = 0;
         var cumulativeThinking = new StringBuilder();
@@ -878,14 +1034,7 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
         var streamEndpoint = $"{trimmed}/v1beta/{modelPath}:streamGenerateContent?alt=sse";
         var syncEndpoint = $"{trimmed}/v1beta/{modelPath}:generateContent";
 
-        var contents = new JsonArray
-        {
-            new JsonObject
-            {
-                ["role"] = "user",
-                ["parts"] = new JsonArray { new JsonObject { ["text"] = request.Prompt } },
-            },
-        };
+        var contents = BuildGeminiInitialContents(request);
 
         var tools = allowTools ? BuildGeminiToolsJson(writable) : null;
         var supportsThinkingConfig = model.Contains("2.5", StringComparison.OrdinalIgnoreCase)
@@ -1134,6 +1283,12 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
                     return new ChatExecutionStep(id, "search", $"Listed {dir}", status, dir, null, dir);
                 }
 
+                if (toolName == "search_files")
+                {
+                    var q = root.TryGetProperty("query", out var qp) && qp.ValueKind == JsonValueKind.String ? qp.GetString() ?? "pattern" : "pattern";
+                    return new ChatExecutionStep(id, "search", $"Searched \"{q}\"", status, q, null, q);
+                }
+
                 if (toolName == "run_command" && root.TryGetProperty("command", out var cmdP) && cmdP.ValueKind == JsonValueKind.String)
                 {
                     var cmd = cmdP.GetString() ?? "command";
@@ -1229,17 +1384,35 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
                 case "list_files":
                 {
                     var rel = args.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : ".";
+                    var recursive = args.TryGetProperty("recursive", out var recProp) && recProp.ValueKind is JsonValueKind.True or JsonValueKind.False && recProp.GetBoolean();
                     var targetDir = ResolveContainedWorkspacePath(workspaceRoot, rel);
                     if (!Directory.Exists(targetDir)) return $"目录不存在：{rel}";
                     var entries = new List<string>();
-                    foreach (var entry in Directory.EnumerateFileSystemEntries(targetDir).Take(160))
+                    if (!recursive)
                     {
-                        var name = Path.GetFileName(entry);
-                        if (name is ".git" or "node_modules" or "bin" or "obj" or "packages") continue;
-                        var isDir = Directory.Exists(entry);
-                        entries.Add((isDir ? "[DIR]  " : "[FILE] ") + Path.GetRelativePath(workspaceRoot, entry));
+                        foreach (var entry in Directory.EnumerateFileSystemEntries(targetDir).Take(200))
+                        {
+                            var name = Path.GetFileName(entry);
+                            if (IsIgnoredDirectoryName(name)) continue;
+                            var isDir = Directory.Exists(entry);
+                            entries.Add((isDir ? "[DIR]  " : "[FILE] ") + Path.GetRelativePath(workspaceRoot, entry));
+                        }
+                    }
+                    else
+                    {
+                        EnumerateWorkspaceFilesRecursive(workspaceRoot, targetDir, entries, maxEntries: 250);
                     }
                     return entries.Count == 0 ? "（目录为空）" : string.Join('\n', entries);
+                }
+
+                case "search_files":
+                {
+                    var query = RequireArg(args, "query");
+                    var rel = args.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : ".";
+                    var isRegex = args.TryGetProperty("is_regex", out var rxProp) && rxProp.ValueKind is JsonValueKind.True or JsonValueKind.False && rxProp.GetBoolean();
+                    var targetDir = ResolveContainedWorkspacePath(workspaceRoot, rel);
+                    if (!Directory.Exists(targetDir) && !File.Exists(targetDir)) return $"搜索路径不存在：{rel}";
+                    return await SearchWorkspaceFilesAsync(workspaceRoot, targetDir, query, isRegex, token).ConfigureAwait(false);
                 }
 
                 case "read_file":
@@ -1275,15 +1448,40 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
                 {
                     if (!writable) return "权限拒绝：当前会话处于 Ask 只读模式，不能修改文件。";
                     var rel = RequireArg(args, "path");
-                    var targetText = RequireArg(args, "target");
-                    var replacement = args.TryGetProperty("replacement", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() ?? string.Empty : string.Empty;
+                    var targetText = args.TryGetProperty("target", out var tProp) && tProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(tProp.GetString())
+                        ? tProp.GetString()!
+                        : RequireArg(args, "old_text");
+                    var replacement = args.TryGetProperty("replacement", out var r) && r.ValueKind == JsonValueKind.String
+                        ? r.GetString() ?? string.Empty
+                        : (args.TryGetProperty("new_text", out var nr) && nr.ValueKind == JsonValueKind.String ? nr.GetString() ?? string.Empty : string.Empty);
+                    var replaceAll = args.TryGetProperty("replace_all", out var ra) && ra.ValueKind is JsonValueKind.True or JsonValueKind.False && ra.GetBoolean();
                     var targetFile = ResolveContainedWorkspacePath(workspaceRoot, rel);
                     if (!File.Exists(targetFile)) return $"文件不存在：{rel}";
                     var current = await File.ReadAllTextAsync(targetFile, token).ConfigureAwait(false);
-                    if (!current.Contains(targetText, StringComparison.Ordinal))
-                        return "替换失败：未在文件中找到完全匹配的 target 片段，请先调用 read_file 核对精确文本。";
-                    var updated = current.Replace(targetText, replacement, StringComparison.Ordinal);
-                    await File.WriteAllTextAsync(targetFile, updated, new UTF8Encoding(false), token).ConfigureAwait(false);
+
+                    // Preserve original Windows CRLF vs LF style while matching CRLF/LF agnostically
+                    var usesCrlf = current.Contains("\r\n", StringComparison.Ordinal);
+                    var normCurrent = current.Replace("\r\n", "\n", StringComparison.Ordinal);
+                    var normTarget = targetText.Replace("\r\n", "\n", StringComparison.Ordinal);
+                    var normReplacement = replacement.Replace("\r\n", "\n", StringComparison.Ordinal);
+
+                    var firstIdx = normCurrent.IndexOf(normTarget, StringComparison.Ordinal);
+                    if (firstIdx < 0)
+                        return "替换失败：未在文件中找到匹配的 target 片段（已自动忽略 CRLF/LF 差异），请先调用 read_file 核对精确缩进与上下文。";
+
+                    if (!replaceAll)
+                    {
+                        var secondIdx = normCurrent.IndexOf(normTarget, firstIdx + Math.Max(1, normTarget.Length), StringComparison.Ordinal);
+                        if (secondIdx >= 0)
+                            return "替换拦截：target 在文件中出现多处，请在 target 中补充前后 2~3 行唯一上下文，或显式传入 replace_all: true。";
+                    }
+
+                    var normUpdated = replaceAll
+                        ? normCurrent.Replace(normTarget, normReplacement, StringComparison.Ordinal)
+                        : string.Concat(normCurrent.AsSpan(0, firstIdx), normReplacement, normCurrent.AsSpan(firstIdx + normTarget.Length));
+
+                    var finalOutput = usesCrlf ? normUpdated.Replace("\n", "\r\n", StringComparison.Ordinal) : normUpdated;
+                    await File.WriteAllTextAsync(targetFile, finalOutput, new UTF8Encoding(false), token).ConfigureAwait(false);
                     return $"已成功修改文件：{Path.GetRelativePath(workspaceRoot, targetFile)}";
                 }
 
@@ -1365,17 +1563,133 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
             ? prop.GetString()!
             : throw new InvalidOperationException($"缺少参数 {name}。");
 
+    private static bool IsIgnoredDirectoryName(string name) =>
+        name is ".git" or "node_modules" or "bin" or "obj" or "packages" or ".vs" or "dist" or "artifacts" or "__pycache__" or ".venv" or "target";
+
+    private static void EnumerateWorkspaceFilesRecursive(string workspaceRoot, string currentDir, List<string> results, int maxEntries)
+    {
+        if (results.Count >= maxEntries) return;
+        try
+        {
+            if ((File.GetAttributes(currentDir) & FileAttributes.ReparsePoint) != 0) return;
+            foreach (var file in Directory.EnumerateFiles(currentDir))
+            {
+                results.Add("[FILE] " + Path.GetRelativePath(workspaceRoot, file));
+                if (results.Count >= maxEntries) return;
+            }
+            foreach (var subDir in Directory.EnumerateDirectories(currentDir))
+            {
+                if (IsIgnoredDirectoryName(Path.GetFileName(subDir))) continue;
+                EnumerateWorkspaceFilesRecursive(workspaceRoot, subDir, results, maxEntries);
+                if (results.Count >= maxEntries) return;
+            }
+        }
+        catch { }
+    }
+
+    private static async Task<string> SearchWorkspaceFilesAsync(
+        string workspaceRoot,
+        string targetPath,
+        string query,
+        bool isRegex,
+        CancellationToken token)
+    {
+        Regex? regex = null;
+        if (isRegex)
+        {
+            try { regex = new Regex(query, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250)); }
+            catch (ArgumentException ex) { return $"正则表达式语法无效：{ex.Message}"; }
+        }
+
+        var filesToScan = new List<string>();
+        void Collect(string dir)
+        {
+            if (filesToScan.Count >= 600) return;
+            try
+            {
+                if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) return;
+                foreach (var f in Directory.EnumerateFiles(dir))
+                {
+                    var ext = Path.GetExtension(f).ToLowerInvariant();
+                    if (ext is ".exe" or ".dll" or ".pdb" or ".png" or ".jpg" or ".jpeg" or ".gif" or ".ico" or ".zip" or ".woff" or ".woff2" or ".ttf")
+                        continue;
+                    if (new FileInfo(f).Length > 1024 * 1024) continue;
+                    filesToScan.Add(f);
+                    if (filesToScan.Count >= 600) return;
+                }
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    if (IsIgnoredDirectoryName(Path.GetFileName(sub))) continue;
+                    Collect(sub);
+                    if (filesToScan.Count >= 600) return;
+                }
+            }
+            catch { }
+        }
+
+        if (File.Exists(targetPath)) filesToScan.Add(targetPath);
+        else Collect(targetPath);
+
+        var matches = new List<string>();
+        foreach (var file in filesToScan)
+        {
+            token.ThrowIfCancellationRequested();
+            string[] lines;
+            try { lines = await File.ReadAllLinesAsync(file, token).ConfigureAwait(false); }
+            catch { continue; }
+
+            var relPath = Path.GetRelativePath(workspaceRoot, file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var hit = regex is not null
+                    ? SafeIsMatch(regex, line)
+                    : line.Contains(query, StringComparison.OrdinalIgnoreCase);
+                if (hit)
+                {
+                    var snippet = line.Length > 180 ? line[..180] + "…" : line;
+                    matches.Add($"{relPath}:{i + 1}: {snippet.Trim()}");
+                    if (matches.Count >= 80)
+                    {
+                        matches.Add("... (匹配超过 80 处，请缩小 path 或细化 query)");
+                        return string.Join('\n', matches);
+                    }
+                }
+            }
+        }
+
+        return matches.Count == 0 ? $"未找到匹配项：{query}" : string.Join('\n', matches);
+    }
+
+    private static bool SafeIsMatch(Regex regex, string input)
+    {
+        try { return regex.IsMatch(input); }
+        catch (RegexMatchTimeoutException) { return false; }
+    }
+
     private static JsonArray BuildToolSpecs(bool writable)
     {
         var specs = new JsonArray
         {
-            MakeSpec("list_files", "列出工作区指定子目录下的文件与文件夹。", new JsonObject
+            MakeSpec("list_files", "列出工作区指定子目录下的文件与文件夹（支持 recursive 递归扫描项目结构）。", new JsonObject
             {
                 ["type"] = "object",
                 ["properties"] = new JsonObject
                 {
                     ["path"] = new JsonObject { ["type"] = "string", ["description"] = "相对项目根目录的路径，默认为 '.'" },
+                    ["recursive"] = new JsonObject { ["type"] = "boolean", ["description"] = "是否递归列出子目录文件（自动忽略 node_modules/bin/obj/.git）" },
                 },
+            }),
+            MakeSpec("search_files", "在工作区代码文件中快速搜索关键字或正则表达式并返回精确文件路径与行号。", new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["query"] = new JsonObject { ["type"] = "string", ["description"] = "要搜索的关键字或正则表达式" },
+                    ["path"] = new JsonObject { ["type"] = "string", ["description"] = "可选子目录或文件路径，默认为 '.'" },
+                    ["is_regex"] = new JsonObject { ["type"] = "boolean", ["description"] = "是否按正则表达式匹配，默认 false" },
+                },
+                ["required"] = new JsonArray("query"),
             }),
             MakeSpec("read_file", "读取工作区内指定文件的行号内容。", new JsonObject
             {
@@ -1403,14 +1717,15 @@ public sealed class BuiltInApiAgentRunner : IGroupChatRunner
                 ["required"] = new JsonArray("path", "content"),
             }));
 
-            specs.Add(MakeSpec("edit_file", "在工作区现有文件中将精确匹配的 target 替换为 replacement。", new JsonObject
+            specs.Add(MakeSpec("edit_file", "在工作区现有文件中将精确匹配的 target 替换为 replacement（自动兼容 CRLF/LF）。", new JsonObject
             {
                 ["type"] = "object",
                 ["properties"] = new JsonObject
                 {
                     ["path"] = new JsonObject { ["type"] = "string", ["description"] = "相对项目根目录的文件路径" },
-                    ["target"] = new JsonObject { ["type"] = "string", ["description"] = "要替换的原文本片段（包含精确缩进）" },
+                    ["target"] = new JsonObject { ["type"] = "string", ["description"] = "要替换的原文本片段（包含精确缩进与唯一上下文）" },
                     ["replacement"] = new JsonObject { ["type"] = "string", ["description"] = "替换后的新文本片段" },
+                    ["replace_all"] = new JsonObject { ["type"] = "boolean", ["description"] = "当 target 出现多处时是否全部替换，默认 false" },
                 },
                 ["required"] = new JsonArray("path", "target", "replacement"),
             }));

@@ -13,6 +13,9 @@ internal static class WebUiResourceServer
     private static readonly Assembly CurrentAssembly = typeof(WebUiResourceServer).Assembly;
     private static readonly Dictionary<string, string> ResourceLookup = BuildResourceLookup();
 
+    private const string ShellCsp =
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'";
+
     public static async Task<CoreWebView2Environment> CreateEnvironmentAsync(string projectRoot)
     {
         var userDataFolder = ProfilePathSafety.GetContainedFullPath(projectRoot, "data", "launcher-webview");
@@ -20,6 +23,14 @@ internal static class WebUiResourceServer
         Directory.CreateDirectory(userDataFolder);
         var options = new CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection");
         return await CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: userDataFolder, options: options);
+    }
+
+    public static async Task<CoreWebView2Environment> CreatePreviewEnvironmentAsync(string projectRoot)
+    {
+        var userDataFolder = ProfilePathSafety.GetContainedFullPath(projectRoot, "data", "preview-webview");
+        ProfilePathSafety.ThrowIfReparsePath(userDataFolder);
+        Directory.CreateDirectory(userDataFolder);
+        return await CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: userDataFolder, options: null);
     }
 
     public static void Attach(CoreWebView2 webView)
@@ -62,11 +73,14 @@ internal static class WebUiResourceServer
         }
 
         var contentType = GetContentType(relativePath);
+        var headers = relativePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            ? $"Content-Type: {contentType}\r\nCache-Control: no-store\r\nContent-Security-Policy: {ShellCsp}"
+            : $"Content-Type: {contentType}\r\nCache-Control: no-store";
         e.Response = webView.Environment.CreateWebResourceResponse(
             stream,
             200,
             "OK",
-            $"Content-Type: {contentType}\r\nCache-Control: no-store");
+            headers);
     }
 
     private static Dictionary<string, string> BuildResourceLookup()

@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly WebUiBridge _bridge;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _streamFlushTimer;
+    private readonly DispatcherTimer _broadcastDebounceTimer;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ConcurrentDictionary<Task, byte> _backgroundTasks = new();
     private readonly ConcurrentDictionary<string, GroupChatRoom> _dirtyRooms = new(StringComparer.Ordinal);
@@ -42,8 +43,10 @@ public partial class MainWindow : Window
     private IReadOnlyList<DetectedCliEngine> _detectedClis = [];
     private UiSettings _currentSettings;
     private CoreWebView2Environment? _webViewEnvironment;
+    private CoreWebView2Environment? _previewEnvironment;
     private Task? _webViewInitTask;
     private Task? _discoveryTask;
+    private string? _lastWorkspaceIdsSignature;
     private string _sandboxStatusText = "正在检查受管账号多开沙箱…";
     private bool _isLaunching, _isClosing, _closed, _preparingSandboxes, _started, _shellReady, _previewReady, _designVisible, _designInspecting;
     private string _designUrl = "http://localhost:3000";
@@ -58,6 +61,7 @@ public partial class MainWindow : Window
         _settingsStore = new UiSettingsStore(_projectRoot);
         _currentSettings = _settingsStore.Load();
         _designUrl = _currentSettings.LastPreviewUrl;
+        ApplyNativeChromeTheme(_currentSettings.Theme);
 
         _profiles = new ProfileService(_projectRoot);
         _workspaces = new WorkspaceCatalog(_projectRoot);
@@ -128,6 +132,13 @@ public partial class MainWindow : Window
         _streamFlushTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(60) };
         _streamFlushTimer.Tick += StreamFlushTimer_Tick;
 
+        _broadcastDebounceTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(50) };
+        _broadcastDebounceTimer.Tick += (_, _) =>
+        {
+            _broadcastDebounceTimer.Stop();
+            BroadcastFullState();
+        };
+
         StateChanged += (_, _) => PostEvent("window.state", new { isMaximized = WindowState == WindowState.Maximized });
 
         Loaded += async (_, _) =>
@@ -188,6 +199,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            ShellWebView.AllowExternalDrop = false;
             _webViewEnvironment = await WebUiResourceServer.CreateEnvironmentAsync(_projectRoot);
             await ShellWebView.EnsureCoreWebView2Async(_webViewEnvironment);
 
@@ -196,6 +208,35 @@ public partial class MainWindow : Window
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.AreDevToolsEnabled = true;
             WebUiResourceServer.Attach(core);
+
+            core.NavigationStarting += (_, navArgs) =>
+            {
+                if (string.IsNullOrWhiteSpace(navArgs.Uri) ||
+                    navArgs.Uri.StartsWith(WebUiResourceServer.Origin, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(navArgs.Uri, "about:blank", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                navArgs.Cancel = true;
+                if (Uri.TryCreate(navArgs.Uri, UriKind.Absolute, out var extUri) &&
+                    (extUri.Scheme == Uri.UriSchemeHttps || extUri.Scheme == Uri.UriSchemeHttp))
+                {
+                    try { Process.Start(new ProcessStartInfo { FileName = extUri.AbsoluteUri, UseShellExecute = true }); }
+                    catch { }
+                }
+            };
+
+            core.NewWindowRequested += (_, winArgs) =>
+            {
+                winArgs.Handled = true;
+                if (Uri.TryCreate(winArgs.Uri, UriKind.Absolute, out var extUri) &&
+                    (extUri.Scheme == Uri.UriSchemeHttps || extUri.Scheme == Uri.UriSchemeHttp))
+                {
+                    try { Process.Start(new ProcessStartInfo { FileName = extUri.AbsoluteUri, UseShellExecute = true }); }
+                    catch { }
+                }
+            };
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs args)
@@ -210,6 +251,11 @@ public partial class MainWindow : Window
             core.WebMessageReceived += async (_, args) =>
             {
                 if (_isClosing) return;
+                if (!Uri.TryCreate(args.Source, UriKind.Absolute, out var src) ||
+                    !string.Equals($"{src.Scheme}://{src.Authority}", WebUiResourceServer.Origin, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
                 try
                 {
                     var json = args.TryGetWebMessageAsString();
@@ -323,17 +369,135 @@ public partial class MainWindow : Window
         PostEvent("state.snapshot", BuildFullStateDto());
     }
 
-    internal object BuildFullStateDto()
+    internal void RequestBroadcastFullState()
+    {
+        if (!_shellReady || _isClosing) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(RequestBroadcastFullState, DispatcherPriority.Background);
+            return;
+        }
+        _broadcastDebounceTimer.Stop();
+        _broadcastDebounceTimer.Start();
+    }
+
+    internal void ApplyNativeChromeTheme(string? theme)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => ApplyNativeChromeTheme(theme));
+            return;
+        }
+
+        (byte r, byte g, byte b) bg;
+        (byte r, byte g, byte b) border;
+        (byte r, byte g, byte b) panel;
+        (byte r, byte g, byte b) header;
+        (byte r, byte g, byte b) text;
+        (byte r, byte g, byte b) btnBg;
+        (byte r, byte g, byte b) btnBorder;
+
+        switch ((theme ?? "obsidian").Trim().ToLowerInvariant())
+        {
+            case "daylight":
+                bg = (244, 246, 250);
+                border = (203, 213, 225);
+                panel = (255, 255, 255);
+                header = (238, 242, 247);
+                text = (15, 23, 42);
+                btnBg = (226, 232, 240);
+                btnBorder = (203, 213, 225);
+                break;
+            case "matrix":
+                bg = (6, 13, 9);
+                border = (22, 48, 34);
+                panel = (9, 20, 14);
+                header = (12, 27, 19);
+                text = (209, 250, 229);
+                btnBg = (18, 41, 29);
+                btnBorder = (31, 71, 50);
+                break;
+            case "aurora":
+                bg = (14, 11, 22);
+                border = (39, 31, 61);
+                panel = (19, 15, 31);
+                header = (24, 19, 40);
+                text = (237, 233, 254);
+                btnBg = (34, 26, 56);
+                btnBorder = (53, 41, 87);
+                break;
+            default:
+                bg = (11, 14, 20);
+                border = (30, 38, 54);
+                panel = (15, 20, 31);
+                header = (17, 23, 36);
+                text = (203, 213, 225);
+                btnBg = (30, 41, 59);
+                btnBorder = (51, 65, 85);
+                break;
+        }
+
+        static System.Windows.Media.SolidColorBrush Brush((byte r, byte g, byte b) c) =>
+            new(System.Windows.Media.Color.FromRgb(c.r, c.g, c.b));
+
+        var bgBrush = Brush(bg);
+        var borderBrush = Brush(border);
+        Background = bgBrush;
+        RootFrame.Background = bgBrush;
+        RootFrame.BorderBrush = borderBrush;
+        BootOverlay.Background = bgBrush;
+        ShellWebView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, bg.r, bg.g, bg.b);
+        PreviewSplitter.Background = borderBrush;
+        PreviewContainer.Background = Brush(panel);
+        PreviewContainer.BorderBrush = borderBrush;
+        PreviewHeaderBorder.Background = Brush(header);
+        PreviewHeaderBorder.BorderBrush = borderBrush;
+        PreviewTitleText.Foreground = Brush(text);
+        PreviewCloseButton.Background = Brush(btnBg);
+        PreviewCloseButton.Foreground = Brush(text);
+        PreviewCloseButton.BorderBrush = Brush(btnBorder);
+    }
+
+    internal object BuildTelemetryTickDto()
     {
         var workspaces = GetUnifiedWorkspaces();
         var pool = _accountPool.BuildSummary(workspaces, _currentSettings.FailoverThresholdPercent);
         var allTracked = _monitors.Values.SelectMany(m => m.Instances).ToArray();
+        var totalVisibleWindows = allTracked.Where(i => !i.IsStopped).Count(i => i.HasMainWindow);
+        var totalHiddenWindows = _stealthWindows.TotalHiddenCount;
+        var warnings = _monitors.Values.Select(m => m.LastWarning)
+            .Append(_workspaces.LastWarning)
+            .Append(_coordinator.PersistenceWarning)
+            .Where(w => !string.IsNullOrWhiteSpace(w))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
-        var instances = allTracked
+        return new
+        {
+            IsLaunching = _isLaunching,
+            IsPreparingSandboxes = _preparingSandboxes,
+            SandboxStatusText = _sandboxStatusText,
+            ClaudeCliAvailable = ClaudeCliRunner.TryFindClaudeCliExecutable(null, workspaces) is not null,
+            AgyCliAvailable = AntigravityAgentRunner.TryFindAgyCliExecutable() is not null,
+            Stealth = new
+            {
+                Enabled = _currentSettings.StealthBackgroundMode,
+                VisibleClientWindows = totalVisibleWindows,
+                HiddenClientWindows = totalHiddenWindows,
+            },
+            Pool = pool,
+            Workspaces = MapWorkspacesDto(workspaces, allTracked),
+            Instances = MapInstancesDto(allTracked),
+            Warnings = warnings,
+        };
+    }
+
+    private object[] MapInstancesDto(TrackedCodexInstance[] allTracked) =>
+        allTracked
             .Select(i =>
             {
                 var winState = _stealthWindows.GetWorkspaceWindowState(i.ProfileId, i.MemberProcessIds.Append(i.ProcessId));
-                return new
+                return (object)new
                 {
                     i.ProfileId,
                     i.ProfileName,
@@ -361,6 +525,52 @@ public partial class MainWindow : Window
                 };
             })
             .ToArray();
+
+    private object[] MapWorkspacesDto(IReadOnlyList<CodexWorkspace> workspaces, TrackedCodexInstance[] allTracked) =>
+        workspaces.Select(w =>
+        {
+            var wsInstances = allTracked.Where(i => i.ProfileId == w.Id && !i.IsStopped).ToArray();
+            var memberPids = wsInstances.SelectMany(i => i.MemberProcessIds.Append(i.ProcessId));
+            var stealthState = _stealthWindows.GetWorkspaceWindowState(w.Id, memberPids);
+            return (object)new
+            {
+                w.Id,
+                w.DisplayName,
+                w.Kind,
+                w.Client,
+                w.ClientName,
+                w.HasDesktopClient,
+                w.ProviderId,
+                w.DefaultModel,
+                w.Subtitle,
+                w.IsLaunchable,
+                w.CanReadUsage,
+                w.ElectronUserData,
+                w.CodexHome,
+                w.ClaudeHome,
+                w.AntigravityHome,
+                StorageText = !w.HasDesktopClient
+                    ? (w.Client == ClientKind.DirectApi ? "DPAPI 加密直连 · 零客户端体积" : "独立 CLI 沙箱目录")
+                    : (_storageSummaries.TryGetValue(w.Id, out var st) ? st : (w.Kind == CodexWorkspaceKind.Managed ? "正在统计…" : "原始官方目录")),
+                RunningCount = wsInstances.Length,
+                TotalMemoryText = wsInstances.Length > 0 && wsInstances.All(i => i.IsWorkingSetAvailable)
+                    ? RuntimeFormatting.FormatBytes(wsInstances.Sum(i => i.WorkingSetBytes))
+                    : null,
+                TotalCpuText = wsInstances.Length > 0 && wsInstances.All(i => i.IsCpuAvailable)
+                    ? $"{wsInstances.Sum(i => i.CpuPercent):0.0}%"
+                    : null,
+                VisibleWindowCount = stealthState.VisibleWindowCount,
+                HiddenWindowCount = stealthState.HiddenWindowCount,
+                IsLoginWindowRevealed = _stealthWindows.IsTemporarilyRevealedForLogin(w.Id),
+            };
+        }).ToArray();
+
+    internal object BuildFullStateDto()
+    {
+        var workspaces = GetUnifiedWorkspaces();
+        var pool = _accountPool.BuildSummary(workspaces, _currentSettings.FailoverThresholdPercent);
+        var allTracked = _monitors.Values.SelectMany(m => m.Instances).ToArray();
+        var instances = MapInstancesDto(allTracked);
 
         var totalVisibleWindows = allTracked.Where(i => !i.IsStopped).Count(i => i.HasMainWindow);
         var totalHiddenWindows = _stealthWindows.TotalHiddenCount;
@@ -390,43 +600,7 @@ public partial class MainWindow : Window
                 HiddenClientWindows = totalHiddenWindows,
             },
             Pool = pool,
-            Workspaces = workspaces.Select(w =>
-            {
-                var wsInstances = allTracked.Where(i => i.ProfileId == w.Id && !i.IsStopped).ToArray();
-                var memberPids = wsInstances.SelectMany(i => i.MemberProcessIds.Append(i.ProcessId));
-                var stealthState = _stealthWindows.GetWorkspaceWindowState(w.Id, memberPids);
-                return new
-                {
-                    w.Id,
-                    w.DisplayName,
-                    w.Kind,
-                    w.Client,
-                    w.ClientName,
-                    w.HasDesktopClient,
-                    w.ProviderId,
-                    w.DefaultModel,
-                    w.Subtitle,
-                    w.IsLaunchable,
-                    w.CanReadUsage,
-                    w.ElectronUserData,
-                    w.CodexHome,
-                    w.ClaudeHome,
-                    w.AntigravityHome,
-                    StorageText = !w.HasDesktopClient
-                        ? (w.Client == ClientKind.DirectApi ? "DPAPI 加密直连 · 零客户端体积" : "独立 CLI 沙箱目录")
-                        : (_storageSummaries.TryGetValue(w.Id, out var st) ? st : (w.Kind == CodexWorkspaceKind.Managed ? "正在统计…" : "原始官方目录")),
-                    RunningCount = wsInstances.Length,
-                    TotalMemoryText = wsInstances.Length > 0 && wsInstances.All(i => i.IsWorkingSetAvailable)
-                        ? RuntimeFormatting.FormatBytes(wsInstances.Sum(i => i.WorkingSetBytes))
-                        : null,
-                    TotalCpuText = wsInstances.Length > 0 && wsInstances.All(i => i.IsCpuAvailable)
-                        ? $"{wsInstances.Sum(i => i.CpuPercent):0.0}%"
-                        : null,
-                    VisibleWindowCount = stealthState.VisibleWindowCount,
-                    HiddenWindowCount = stealthState.HiddenWindowCount,
-                    IsLoginWindowRevealed = _stealthWindows.IsTemporarilyRevealedForLogin(w.Id),
-                };
-            }).ToArray(),
+            Workspaces = MapWorkspacesDto(workspaces, allTracked),
             UniversalAgents = _agentProviders.List().Select(r =>
             {
                 var resolvedHome = _agentProviders.ResolveHomeDirectory(r);
@@ -531,7 +705,10 @@ public partial class MainWindow : Window
     internal UiSettings UpdateSettings(UiSettings next)
     {
         var prevStealth = _currentSettings.StealthBackgroundMode;
+        var prevTheme = _currentSettings.Theme;
         _currentSettings = _settingsStore.Save(next);
+        if (!string.Equals(prevTheme, _currentSettings.Theme, StringComparison.OrdinalIgnoreCase))
+            ApplyNativeChromeTheme(_currentSettings.Theme);
         if (_enableAutoStealth && _currentSettings.StealthBackgroundMode && !prevStealth)
         {
             _stealthWindows.EnforceStealthOnInstances(_monitors.Values.SelectMany(m => m.Instances));
@@ -783,6 +960,8 @@ public partial class MainWindow : Window
     internal async Task<object> UpsertUniversalAgentFromBridgeAsync(UniversalAgentUpsertRequest request, bool runPingTest = false)
     {
         var saved = _agentProviders.Upsert(request);
+        ClaudeCliRunner.InvalidateCliCache();
+        AntigravityAgentRunner.InvalidateDiscoveryCache();
         _detectedClis = UniversalAgentCatalog.DetectInstalledClis(_workspaces.Workspaces);
         _coordinator.SyncRosterWithWorkspaces();
         if (string.IsNullOrWhiteSpace(request.Id))
@@ -867,6 +1046,8 @@ public partial class MainWindow : Window
 
     internal object ScanMarketClisFromBridge()
     {
+        ClaudeCliRunner.InvalidateCliCache();
+        AntigravityAgentRunner.InvalidateDiscoveryCache();
         _detectedClis = UniversalAgentCatalog.DetectInstalledClis(_workspaces.Workspaces);
         BroadcastFullState();
         var installedCount = _detectedClis.Count(c => c.Installed && c.PresetId != "custom-cli");
@@ -921,7 +1102,7 @@ public partial class MainWindow : Window
                 unified,
                 force,
                 _lifetime.Token,
-                onEachUpdated: () => Dispatcher.BeginInvoke(BroadcastFullState));
+                onEachUpdated: RequestBroadcastFullState);
         }
         else if (FindUnifiedWorkspaceById(workspaceId) is { } ws)
         {
@@ -930,7 +1111,7 @@ public partial class MainWindow : Window
             else
                 await _accountPool.RefreshAllCodexAsync([ws], force, _lifetime.Token);
         }
-        BroadcastFullState();
+        RequestBroadcastFullState();
     }
 
     private async Task AutoProvisionAntigravityCliIfNeededAsync()
@@ -970,8 +1151,14 @@ public partial class MainWindow : Window
         await _discoveryTask;
         if (_isClosing) return;
 
-        // Auto-enroll newly discovered original workspaces into @ roster
-        _coordinator.SyncRosterWithWorkspaces();
+        var currentWorkspaces = GetUnifiedWorkspaces();
+        var sig = string.Join('|', currentWorkspaces.Select(w => w.Id));
+        var rosterChanged = !string.Equals(_lastWorkspaceIdsSignature, sig, StringComparison.Ordinal);
+        if (rosterChanged)
+        {
+            _lastWorkspaceIdsSignature = sig;
+            _coordinator.SyncRosterWithWorkspaces();
+        }
 
         // Enforce background stealth mode ONLY on workspaces explicitly placed into stealth daemon mode
         // (so pre-existing user IDE windows open before launcher startup are never unexpectedly hidden!)
@@ -982,7 +1169,10 @@ public partial class MainWindow : Window
             _stealthWindows.EnforceStealthOnInstances(managedInstances);
         }
 
-        BroadcastFullState();
+        if (rosterChanged)
+            BroadcastFullState();
+        else if (_shellReady && !_isClosing)
+            PostEvent("telemetry.tick", BuildTelemetryTickDto());
     }
 
     internal async Task PrepareManagedSandboxesAsync()
@@ -1202,7 +1392,7 @@ public partial class MainWindow : Window
             }
             catch { }
         }
-        if (!_isClosing) BroadcastFullState();
+        if (!_isClosing) RequestBroadcastFullState();
     }
 
     internal async Task<object> CreateRoomFromBridgeAsync(string? title, string? directory, bool createWorktree, string? sandboxModeStr, string? dedicatedWorkspaceId = null, string? primaryWorkspaceId = null)
@@ -1667,10 +1857,10 @@ public partial class MainWindow : Window
             await ExecAsync(gitExe, worktreeDir, "-c", "user.name=Hyperion", "-c", "user.email=hyperion@local", "commit", "-m", commitMessage);
     }
 
-    internal void StartRoomSend(string roomId, string text)
+    internal void StartRoomSend(string roomId, string text, IReadOnlyList<ChatImageAttachment>? attachments = null)
     {
         var room = RequireRoomById(roomId);
-        Track(_coordinator.SendAsync(room, text));
+        Track(_coordinator.SendAsync(room, text, attachments));
     }
 
     internal void StopRoom(string roomId)
@@ -1794,9 +1984,24 @@ public partial class MainWindow : Window
     private async Task EnsurePreviewWebViewInitializedAsync()
     {
         if (_previewReady) return;
-        _webViewEnvironment ??= await WebUiResourceServer.CreateEnvironmentAsync(_projectRoot);
-        await PreviewWebView.EnsureCoreWebView2Async(_webViewEnvironment);
+        PreviewWebView.AllowExternalDrop = false;
+        _previewEnvironment ??= await WebUiResourceServer.CreatePreviewEnvironmentAsync(_projectRoot);
+        await PreviewWebView.EnsureCoreWebView2Async(_previewEnvironment);
         var core = PreviewWebView.CoreWebView2;
+        core.Settings.AreDevToolsEnabled = true;
+        core.NavigationStarting += (_, navArgs) =>
+        {
+            if (string.IsNullOrWhiteSpace(navArgs.Uri) ||
+                string.Equals(navArgs.Uri, "about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (!Uri.TryCreate(navArgs.Uri, UriKind.Absolute, out var targetUri) ||
+                (targetUri.Scheme != Uri.UriSchemeHttp && targetUri.Scheme != Uri.UriSchemeHttps))
+            {
+                navArgs.Cancel = true;
+            }
+        };
         await core.AddScriptToExecuteOnDocumentCreatedAsync(DesignModeInspector.BootstrapScript);
         core.NavigationCompleted += (_, _) =>
         {
@@ -1906,6 +2111,7 @@ public partial class MainWindow : Window
         _isClosing = true;
         _refreshTimer.Stop();
         _streamFlushTimer.Stop();
+        _broadcastDebounceTimer.Stop();
         _lifetime.Cancel();
 
         try

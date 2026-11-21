@@ -137,6 +137,7 @@ internal static class AdeFeaturesTests
             await VerifyAccountPoolFailoverAsync(root);
             await VerifyGitWorktreeAndArenaMergeAsync(root);
             await VerifyConPtyIsolationAsync(root);
+            await VerifyV002BackendUpgradesAsync(root);
             Console.WriteLine("ADE multi-style settings, dynamic model/effort/speed catalogs, zero-download Direct API & Market CLI engines, DPAPI encryption, account-pool auto-failover, Git worktrees, Arena merge, Claude/Antigravity isolation, and native ConPTY contracts passed.");
         }
         finally
@@ -898,6 +899,187 @@ internal static class AdeFeaturesTests
             && capturedChatBody.Contains("\"service_tier\":\"priority\"", StringComparison.Ordinal)
             && !capturedChatBody.Contains("\"temperature\"", StringComparison.Ordinal),
             "BuiltInApiAgentRunner must inject reasoning_effort and service_tier while omitting temperature on reasoning requests.");
+    }
+
+    private static async Task VerifyV002BackendUpgradesAsync(string root)
+    {
+        var subRoot = Path.Combine(root, "v002-upgrades");
+        var workDir = Path.Combine(subRoot, "workspace");
+        Directory.CreateDirectory(workDir);
+
+        // 1. Verify GroupChatRouting incremental delta prompt & sliding-window history compaction
+        var agentA = new GroupChatAgent("ag-a", "ClaudeA", "ws-a");
+        var history = new List<GroupChatMessage>
+        {
+            new() { Role = ChatMessageRole.User, Sender = "你", State = ChatMessageState.Completed, Text = "第一轮超长背景上下文 OLD_TURN_1" },
+            new() { Role = ChatMessageRole.Agent, AgentId = "ag-a", Sender = "ClaudeA", State = ChatMessageState.Completed, Text = "第一轮回复 OLD_REPLY_1" },
+            new() { Role = ChatMessageRole.Agent, AgentId = "ag-b", Sender = "GPTB", State = ChatMessageState.Completed, Text = "队友补充 INTERVENING_PEER" },
+        };
+        var inc = GroupChatRouting.BuildIncrementalPrompt(agentA, history, "请继续第二轮");
+        Check(!inc.Contains("OLD_TURN_1", StringComparison.Ordinal)
+            && !inc.Contains("OLD_REPLY_1", StringComparison.Ordinal)
+            && inc.Contains("INTERVENING_PEER", StringComparison.Ordinal)
+            && inc.Contains("请继续第二轮", StringComparison.Ordinal),
+            "BuildIncrementalPrompt must exclude turns already inside recipient's resumed session while including intervening peer messages.");
+
+        var giantHistory = Enumerable.Range(0, 18)
+            .Select(i => new GroupChatMessage
+            {
+                Role = i % 2 == 0 ? ChatMessageRole.User : ChatMessageRole.Agent,
+                Sender = i % 2 == 0 ? "你" : "ClaudeA",
+                State = ChatMessageState.Completed,
+                Text = $"Turn-{i}: " + new string('A', 12_000),
+            })
+            .ToList();
+        var compacted = GroupChatRouting.BuildPrompt(agentA, giantHistory, "最新问题", ChatSandboxMode.WorkspaceWrite);
+        Check(compacted.Length <= GroupChatRouting.MaximumContextCharacters
+            && compacted.Contains("滑动折叠", StringComparison.Ordinal)
+            && compacted.Contains("最新问题", StringComparison.Ordinal),
+            "BuildPrompt must compact oldest turns via sliding window instead of failing when history exceeds context budget.");
+
+        // 2. Verify AccountPoolService unconfigured DirectApi guard & exact HTTP 429 boundary regex
+        Check(AccountPoolService.IsQuotaOrRateLimitFailure("HTTP 429 Too Many Requests"), "HTTP 429 must trigger rate-limit failover.");
+        Check(!AccountPoolService.IsQuotaOrRateLimitFailure("Connection refused at http://127.0.0.1:4290/v1"), "Port :4290 must NOT falsely trigger 429 rate-limit cooldown!");
+
+        var store = new AgentProviderStore(subRoot);
+        var configuredOai = store.Upsert(new UniversalAgentUpsertRequest(
+            Id: null,
+            DisplayName: "已填Key号",
+            AgentKind: UniversalAgentKind.DirectApi,
+            PresetId: "openai",
+            Protocol: ApiProtocolKind.OpenAiCompatible,
+            BaseUrl: "https://mock.oai.local/v1",
+            Model: "gpt-5.4",
+            ApiKeyPlaintext: "sk-valid-key-999"));
+        var anthropicRec = store.Upsert(new UniversalAgentUpsertRequest(
+            Id: null,
+            DisplayName: "Claude直连",
+            AgentKind: UniversalAgentKind.DirectApi,
+            PresetId: "anthropic",
+            Protocol: ApiProtocolKind.AnthropicMessages,
+            BaseUrl: "https://mock.anthropic.local",
+            Model: "claude-sonnet-4-5",
+            ApiKeyPlaintext: "sk-ant-valid-999"));
+
+        // Simulate a DirectApi record migrated from another PC / missing valid DPAPI key in agent-providers.json
+        var migratedId = Guid.NewGuid().ToString("N");
+        var storeJsonPath = Path.Combine(subRoot, "data", "agent-providers.json");
+        var storeJsonOpts = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        };
+        var existingRecords = JsonSerializer.Deserialize<List<UniversalAgentRecord>>(File.ReadAllText(storeJsonPath), storeJsonOpts)!;
+        existingRecords.Insert(0, new UniversalAgentRecord(
+            Id: migratedId,
+            DisplayName: "未填Key号",
+            AgentKind: UniversalAgentKind.DirectApi,
+            PresetId: "openai",
+            Protocol: ApiProtocolKind.OpenAiCompatible,
+            BaseUrl: "https://mock.oai.local/v1",
+            Model: "gpt-5.4",
+            EncryptedApiKey: "corrupted-or-other-machine-dpapi",
+            MaskedApiKey: null,
+            CustomCliExecutable: null,
+            CustomCliArgsTemplate: null,
+            TokenBudgetLimit: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow));
+        File.WriteAllText(storeJsonPath, JsonSerializer.Serialize(existingRecords, storeJsonOpts));
+        store.Reload();
+        var unconfiguredOai = store.FindById(migratedId)!;
+
+        using var pool = new AccountPoolService(agentProviders: store);
+        var wsList = store.BuildWorkspaces();
+        var unconfigWs = wsList.First(w => w.ProviderId == unconfiguredOai.Id);
+        var configWs = wsList.First(w => w.ProviderId == configuredOai.Id);
+        var anthWs = wsList.First(w => w.ProviderId == anthropicRec.Id);
+
+        var sum = pool.BuildSummary(wsList, 92);
+        Check(!sum.Entries.First(e => e.WorkspaceId == unconfigWs.Id).AuthReady, "DirectApi requiring key with null EncryptedApiKey must report AuthReady == false.");
+        Check(sum.Entries.First(e => e.WorkspaceId == configWs.Id).AuthReady, "DirectApi with valid EncryptedApiKey must report AuthReady == true.");
+        var fallback = pool.SelectFailoverWorkspace(wsList, anthWs.Id, null, 92);
+        Check(fallback?.Id == configWs.Id, "SelectFailoverWorkspace must skip unconfigured DirectApi accounts and pick healthy configured DirectApi.");
+
+        // 3. Verify BuiltInApiAgentRunner: CRLF-agnostic edit_file, multi-match protection, search_files, and Multimodal Vision (OpenAI + Anthropic)!
+        File.WriteAllText(Path.Combine(workDir, "crlf.cs"), "line1\r\nvar x = 1;\r\nvar y = 2;\r\nvar dup = 0;\r\nvar dup = 0;\r\n", Encoding.ASCII);
+
+        var stepIdx = 0;
+        string? capturedOaiVisionBody = null;
+        string? capturedAnthVisionBody = null;
+        string? ambiguityToolResult = null;
+        string? searchToolResult = null;
+
+        using var v002Http = new HttpClient(new DelegateHttpHandler(async req =>
+        {
+            var body = await req.Content!.ReadAsStringAsync();
+            if (req.RequestUri!.Host == "mock.anthropic.local")
+            {
+                capturedAnthVisionBody = body;
+                return JsonHttp("""{"content":[{"type":"text","text":"ANTHROPIC_VISION_OK"}],"usage":{"input_tokens":50,"output_tokens":10}}""");
+            }
+
+            if (body.Contains("VISION_CHECK", StringComparison.Ordinal))
+            {
+                capturedOaiVisionBody = body;
+                return JsonHttp("""{"choices":[{"message":{"role":"assistant","content":"OPENAI_VISION_OK"}}],"usage":{"prompt_tokens":40,"completion_tokens":8}}""");
+            }
+
+            var cur = Interlocked.Increment(ref stepIdx);
+            if (cur == 1)
+            {
+                // LF target against CRLF file + ambiguous multi-match edit + search_files
+                return JsonHttp("""
+                    {"choices":[{"message":{"role":"assistant","content":"","tool_calls":[
+                      {"id":"t1","type":"function","function":{"name":"edit_file","arguments":"{\"path\":\"crlf.cs\",\"target\":\"var x = 1;\\nvar y = 2;\",\"replacement\":\"var x = 42;\\nvar y = 99;\"}"}},
+                      {"id":"t2","type":"function","function":{"name":"edit_file","arguments":"{\"path\":\"crlf.cs\",\"target\":\"var dup = 0;\",\"replacement\":\"var dup = 1;\"}"}},
+                      {"id":"t3","type":"function","function":{"name":"search_files","arguments":"{\"query\":\"var x = 42\"}"}}
+                    ]}}],"usage":{"prompt_tokens":100,"completion_tokens":40}}
+                    """);
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            foreach (var msg in doc.RootElement.GetProperty("messages").EnumerateArray())
+            {
+                if (msg.GetProperty("role").GetString() == "tool")
+                {
+                    var tcId = msg.GetProperty("tool_call_id").GetString();
+                    var content = msg.GetProperty("content").GetString();
+                    if (tcId == "t2") ambiguityToolResult = content;
+                    if (tcId == "t3") searchToolResult = content;
+                }
+            }
+            return JsonHttp("""{"choices":[{"message":{"role":"assistant","content":"TOOLS_VERIFIED"}}],"usage":{"prompt_tokens":140,"completion_tokens":20}}""");
+        }));
+
+        var runner = new BuiltInApiAgentRunner(store, null, v002Http);
+        var toolRes = await runner.RunAsync(
+            new GroupChatRun(new GroupChatAgent("a1", "OAI", configWs.Id), configWs, workDir, "测试工具升级", ChatSandboxMode.WorkspaceWrite),
+            new Progress<GroupChatUpdate>(),
+            CancellationToken.None);
+        var editedRaw = File.ReadAllText(Path.Combine(workDir, "crlf.cs"));
+        Check(toolRes == "TOOLS_VERIFIED"
+            && editedRaw.Contains("var x = 42;\r\nvar y = 99;\r\n", StringComparison.Ordinal),
+            "edit_file must match LF old_text against CRLF files while preserving original CRLF line endings.");
+        Check(ambiguityToolResult is not null && ambiguityToolResult.Contains("出现多处", StringComparison.Ordinal),
+            "edit_file must reject ambiguous multi-occurrence matches unless replace_all is true.");
+        Check(searchToolResult is not null && searchToolResult.Contains("crlf.cs", StringComparison.Ordinal),
+            "search_files tool must locate matching lines across workspace files.");
+
+        // Multimodal vision check on OpenAI + Anthropic
+        var sampleImg = new[] { new ChatImageAttachment("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "Shot1") };
+        await runner.RunAsync(
+            new GroupChatRun(new GroupChatAgent("a1", "OAI", configWs.Id), configWs, workDir, "VISION_CHECK", ChatSandboxMode.ReadOnly, Attachments: sampleImg),
+            new Progress<GroupChatUpdate>(),
+            CancellationToken.None);
+        Check(capturedOaiVisionBody is not null && capturedOaiVisionBody.Contains("\"image_url\"", StringComparison.Ordinal),
+            "OpenAI protocol must serialize ChatImageAttachment as multimodal image_url block.");
+
+        await runner.RunAsync(
+            new GroupChatRun(new GroupChatAgent("a2", "Anth", anthWs.Id), anthWs, workDir, "VISION_CHECK", ChatSandboxMode.ReadOnly, Attachments: sampleImg),
+            new Progress<GroupChatUpdate>(),
+            CancellationToken.None);
+        Check(capturedAnthVisionBody is not null && capturedAnthVisionBody.Contains("\"type\":\"image\"", StringComparison.Ordinal),
+            "Anthropic protocol must serialize ChatImageAttachment as base64 image block.");
     }
 
     private static void RunGitSync(string gitExe, string cwd, params string[] args)

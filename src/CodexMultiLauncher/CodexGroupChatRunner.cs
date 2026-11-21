@@ -9,7 +9,6 @@ public sealed class CodexGroupChatRunner : IGroupChatRunner
 {
     private readonly Func<GroupChatRun, ProcessStartInfo> _createStart;
     private readonly Action<string, long, long>? _onTokenUsage;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _threadIds = new(StringComparer.Ordinal);
 
     public CodexGroupChatRunner(Action<string, long, long>? onTokenUsage = null)
         : this(request => CreateStartInfo(CodexExecutableLocator.FindCurrentCandidateOrThrow(), request), onTokenUsage)
@@ -64,7 +63,21 @@ public sealed class CodexGroupChatRunner : IGroupChatRunner
         token.ThrowIfCancellationRequested();
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(20));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
-        using var process = new Process { StartInfo = _createStart(request) };
+        var startInfo = _createStart(request);
+        var promptPayload = request.Prompt;
+        var stagedImages = ClaudeCliRunner.StageImageAttachmentsForCli(request.Attachments, ref promptPayload);
+        if (stagedImages.Count > 0 && startInfo.ArgumentList.Count > 0 && startInfo.ArgumentList[^1] == "-")
+        {
+            startInfo.ArgumentList.RemoveAt(startInfo.ArgumentList.Count - 1);
+            foreach (var img in stagedImages)
+            {
+                startInfo.ArgumentList.Add("-i");
+                startInfo.ArgumentList.Add(img);
+            }
+            startInfo.ArgumentList.Add("-");
+        }
+
+        using var process = new Process { StartInfo = startInfo };
         var started = false;
         Task? output = null, diagnostics = null;
         var events = new CodexGroupChatEvents();
@@ -74,7 +87,7 @@ public sealed class CodexGroupChatRunner : IGroupChatRunner
             started = true;
             diagnostics = DrainAsync(process.StandardError);
             output = ReadEventsAsync(process.StandardOutput, events, progress, linked.Token);
-            await process.StandardInput.WriteAsync(request.Prompt.AsMemory(), linked.Token).ConfigureAwait(false);
+            await process.StandardInput.WriteAsync(promptPayload.AsMemory(), linked.Token).ConfigureAwait(false);
             process.StandardInput.Close();
             await output.ConfigureAwait(false);
             output = DrainAsync(process.StandardOutput);
@@ -100,6 +113,7 @@ public sealed class CodexGroupChatRunner : IGroupChatRunner
         { throw new TimeoutException("本次回复超过 20 分钟，已停止。可以重新发送消息。"); }
         finally
         {
+            ClaudeCliRunner.CleanupStagedFiles(stagedImages);
             if (started)
             {
                 StopOwned(process);

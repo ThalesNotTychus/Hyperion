@@ -214,74 +214,102 @@ public sealed partial class GenericCliAgentRunner : IGroupChatRunner
             return await _antigravityBridge.RunWithCustomHomeAsync(home, request, progress, token).ConfigureAwait(false);
         }
 
-        var (startInfo, stdinPayload) = BuildCliStartInfo(record, _store, request, _desktopWorkspaces?.Invoke());
-
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(20));
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
-
-        using var process = new Process { StartInfo = startInfo };
-        var steps = new List<ChatExecutionStep>
-        {
-            new("cli-boot", "system", $"后台无窗启动 {record.DisplayName} ({record.PresetId})", "completed"),
-        };
-        progress.Report(new GroupChatUpdate(string.Empty, "已启动无头 CLI", steps.ToArray()));
-
-        if (!process.Start())
-            throw new InvalidOperationException($"无法启动 CLI 智能体进程：{startInfo.FileName}");
+        var effectivePrompt = request.Prompt;
+        var stagedFiles = ClaudeCliRunner.StageImageAttachmentsForCli(request.Attachments, ref effectivePrompt);
+        var effectiveRequest = stagedFiles.Count > 0 ? request with { Prompt = effectivePrompt } : request;
 
         try
         {
-            if (stdinPayload is not null)
+            var (startInfo, stdinPayload) = BuildCliStartInfo(record, _store, effectiveRequest, _desktopWorkspaces?.Invoke());
+            if (stagedFiles.Count > 0 && string.Equals(record.PresetId, "codex-cli", StringComparison.OrdinalIgnoreCase))
             {
-                await process.StandardInput.WriteAsync(stdinPayload.AsMemory(), linked.Token).ConfigureAwait(false);
-            }
-            process.StandardInput.Close();
-
-            var stderrTask = process.StandardError.ReadToEndAsync(linked.Token);
-            var answerBuilder = new StringBuilder();
-            var thinkingBuilder = new StringBuilder();
-            var rawFallback = new StringBuilder();
-            var stepSeq = 0;
-
-            while (await process.StandardOutput.ReadLineAsync(linked.Token).ConfigureAwait(false) is { } line)
-            {
-                if (line.Length > 2_000_000) continue;
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith('{') && trimmed.EndsWith('}') && TryConsumeJsonEvent(trimmed, answerBuilder, thinkingBuilder, steps, ref stepSeq, (inTok, outTok) => _onTokenUsage?.Invoke(request.Workspace.Id, inTok, outTok)))
+                var dashIdx = startInfo.ArgumentList.IndexOf("-");
+                foreach (var imgFile in stagedFiles)
                 {
-                    var liveThink = thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null;
-                    progress.Report(new GroupChatUpdate(answerBuilder.ToString(), answerBuilder.Length > 0 ? "正在生成…" : "正在思考…", steps.ToArray(), liveThink));
-                    continue;
-                }
-
-                var clean = StripAnsi(line);
-                rawFallback.AppendLine(clean);
-                if (answerBuilder.Length == 0)
-                {
-                    progress.Report(new GroupChatUpdate(rawFallback.ToString().TrimEnd(), "正在输出…", steps.ToArray(), thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null));
+                    if (dashIdx >= 0)
+                    {
+                        startInfo.ArgumentList.Insert(dashIdx++, "-i");
+                        startInfo.ArgumentList.Insert(dashIdx++, imgFile);
+                    }
+                    else
+                    {
+                        startInfo.ArgumentList.Add("-i");
+                        startInfo.ArgumentList.Add(imgFile);
+                    }
                 }
             }
 
-            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
-            var finalText = (answerBuilder.Length > 0 ? answerBuilder.ToString() : rawFallback.ToString()).Trim();
-            if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(finalText))
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(20));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
+
+            using var process = new Process { StartInfo = startInfo };
+            var steps = new List<ChatExecutionStep>
             {
-                var stderr = StripAnsi(await stderrTask.ConfigureAwait(false)).Trim();
-                var preset = UniversalAgentCatalog.GetCliPreset(record.PresetId);
-                throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
-                    ? $"CLI 智能体退出码 {process.ExitCode}。提示：{preset.LoginHint}"
-                    : $"CLI 智能体返回错误：{stderr[..Math.Min(stderr.Length, 280)]}");
+                new("cli-boot", "system", $"后台无窗启动 {record.DisplayName} ({record.PresetId})", "completed"),
+            };
+            progress.Report(new GroupChatUpdate(string.Empty, "已启动无头 CLI", steps.ToArray()));
+
+            if (!process.Start())
+                throw new InvalidOperationException($"无法启动 CLI 智能体进程：{startInfo.FileName}");
+
+            try
+            {
+                if (stdinPayload is not null)
+                {
+                    await process.StandardInput.WriteAsync(stdinPayload.AsMemory(), linked.Token).ConfigureAwait(false);
+                }
+                process.StandardInput.Close();
+
+                var stderrTask = process.StandardError.ReadToEndAsync(linked.Token);
+                var answerBuilder = new StringBuilder();
+                var thinkingBuilder = new StringBuilder();
+                var rawFallback = new StringBuilder();
+                var stepSeq = 0;
+
+                while (await process.StandardOutput.ReadLineAsync(linked.Token).ConfigureAwait(false) is { } line)
+                {
+                    if (line.Length > 2_000_000) continue;
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith('{') && trimmed.EndsWith('}') && TryConsumeJsonEvent(trimmed, answerBuilder, thinkingBuilder, steps, ref stepSeq, (inTok, outTok) => _onTokenUsage?.Invoke(request.Workspace.Id, inTok, outTok)))
+                    {
+                        var liveThink = thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null;
+                        progress.Report(new GroupChatUpdate(answerBuilder.ToString(), answerBuilder.Length > 0 ? "正在生成…" : "正在思考…", steps.ToArray(), liveThink));
+                        continue;
+                    }
+
+                    var clean = StripAnsi(line);
+                    rawFallback.AppendLine(clean);
+                    if (answerBuilder.Length == 0)
+                    {
+                        progress.Report(new GroupChatUpdate(rawFallback.ToString().TrimEnd(), "正在输出…", steps.ToArray(), thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null));
+                    }
+                }
+
+                await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+                var finalText = (answerBuilder.Length > 0 ? answerBuilder.ToString() : rawFallback.ToString()).Trim();
+                if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(finalText))
+                {
+                    var stderr = StripAnsi(await stderrTask.ConfigureAwait(false)).Trim();
+                    var preset = UniversalAgentCatalog.GetCliPreset(record.PresetId);
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
+                        ? $"CLI 智能体退出码 {process.ExitCode}。提示：{preset.LoginHint}"
+                        : $"CLI 智能体返回错误：{stderr[..Math.Min(stderr.Length, 280)]}");
+                }
+
+                if (string.IsNullOrWhiteSpace(finalText))
+                    finalText = "（CLI 智能体已完成执行，无文本输出。）";
+
+                progress.Report(new GroupChatUpdate(finalText, "已完成", steps.ToArray(), thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null));
+                return finalText;
             }
-
-            if (string.IsNullOrWhiteSpace(finalText))
-                finalText = "（CLI 智能体已完成执行，无文本输出。）";
-
-            progress.Report(new GroupChatUpdate(finalText, "已完成", steps.ToArray(), thinkingBuilder.Length > 0 ? thinkingBuilder.ToString() : null));
-            return finalText;
+            finally
+            {
+                try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            }
         }
         finally
         {
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            ClaudeCliRunner.CleanupStagedFiles(stagedFiles);
         }
     }
 

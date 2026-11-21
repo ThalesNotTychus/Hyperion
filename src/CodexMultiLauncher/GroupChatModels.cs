@@ -104,12 +104,25 @@ public sealed class GroupChatRoom : ChatObservable
 
 public sealed record GroupChatUpdate(string Text, string Activity, IReadOnlyList<ChatExecutionStep>? Steps = null, string? Thinking = null);
 
+public sealed record ChatImageAttachment(
+    string MimeType,
+    string Base64Data,
+    string? Label = null);
+
+public sealed record ChatHistoryTurn(
+    string Role,
+    string Speaker,
+    string Text);
+
 public sealed record GroupChatRun(
     GroupChatAgent Agent,
     CodexWorkspace Workspace,
     string WorkingDirectory,
     string Prompt,
-    ChatSandboxMode SandboxMode = ChatSandboxMode.ReadOnly);
+    ChatSandboxMode SandboxMode = ChatSandboxMode.ReadOnly,
+    string? IncrementalPrompt = null,
+    IReadOnlyList<ChatImageAttachment>? Attachments = null,
+    IReadOnlyList<ChatHistoryTurn>? NativeTurns = null);
 
 public interface IGroupChatRunner
 {

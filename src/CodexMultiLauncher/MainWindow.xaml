@@ -72,7 +72,7 @@
             <RowDefinition Height="38" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
-          <Border Background="#FF111724" BorderBrush="#FF1E2636" BorderThickness="0,0,0,1" Padding="10,0">
+          <Border x:Name="PreviewHeaderBorder" Background="#FF111724" BorderBrush="#FF1E2636" BorderThickness="0,0,0,1" Padding="10,0">
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -82,7 +82,7 @@
                 <Ellipse x:Name="InspectActiveDot" Width="8" Height="8" Fill="#FF38BDF8" Margin="0,0,7,0" Visibility="Collapsed" />
                 <TextBlock x:Name="PreviewTitleText" FontSize="11.5" Foreground="#FFCBD5E1" Text="Design Mode · 实时网页预览与点选抓取" TextTrimming="CharacterEllipsis" />
               </StackPanel>
-              <Button Grid.Column="1" Content="关闭预览" Padding="8,3" FontSize="11" Cursor="Hand"
+              <Button x:Name="PreviewCloseButton" Grid.Column="1" Content="关闭预览" Padding="8,3" FontSize="11" Cursor="Hand"
                       Background="#FF1E293B" Foreground="#FFE2E8F0" BorderBrush="#FF334155" BorderThickness="1"
                       Click="ClosePreviewPane_Click" />
             </Grid>

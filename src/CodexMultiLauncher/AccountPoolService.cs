@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace CodexMultiLauncher;
 
@@ -62,7 +63,7 @@ public sealed record AccountPoolSummary(
 /// tracks battery-style remaining percentages, reset countdowns, auth readiness, live task activity,
 /// session token usage, and automatic rate-limit failover.
 /// </summary>
-public sealed class AccountPoolService : IDisposable
+public sealed partial class AccountPoolService : IDisposable
 {
     private readonly CodexAppServerUsageClient _usageClient;
     private readonly bool _ownsUsageClient;
@@ -164,9 +165,7 @@ public sealed class AccountPoolService : IDisposable
     {
         try
         {
-            // Use an isolated per-call client when forcing parallel refresh so account 2 never blocks behind account 1.
-            var client = force ? new CodexAppServerUsageClient() : _usageClient;
-            var snapshot = await client.ReadAsync(workspace, force, token).ConfigureAwait(false);
+            var snapshot = await _usageClient.ReadAsync(workspace, force, token).ConfigureAwait(false);
             RecordSnapshot(workspace.Id, snapshot);
             return snapshot;
         }
@@ -424,19 +423,28 @@ public sealed class AccountPoolService : IDisposable
                 activeTasks, turns, inTok, outTok, "外部未验证路径", null);
         }
 
+        var now = DateTimeOffset.UtcNow;
+        var inCooldown = _cooldownUntilUtc.TryGetValue(workspace.Id, out var until) && until > now;
         _claudeInspections.TryGetValue(workspace.Id, out var info);
         var engine = info?.CliVersion is not null ? $"Claude Code v{info.CliVersion}" : "Claude 无头引擎";
-        var ready = info?.LoggedIn ?? Directory.Exists(Path.Combine(workspace.ElectronUserData, "Local Storage"));
-        var health = ready ? AccountQuotaHealth.Healthy : AccountQuotaHealth.Unauthenticated;
+        var loggedIn = info?.LoggedIn ?? Directory.Exists(Path.Combine(workspace.ElectronUserData, "Local Storage"));
+        var ready = loggedIn && !inCooldown;
+        var health = !loggedIn
+            ? AccountQuotaHealth.Unauthenticated
+            : inCooldown
+                ? AccountQuotaHealth.Exhausted
+                : AccountQuotaHealth.Healthy;
         var status = activeTasks > 0
             ? $"⚡ 正在后台执行任务 ({activeTasks})"
-            : (info?.StatusSummary ?? (ready ? "已初始化 · 后台无头就绪" : "待登录 · 可在终端执行 claude auth login"));
+            : inCooldown
+                ? $"限流冷却 · {FormatCountdown(until - now)}后恢复"
+                : (info?.StatusSummary ?? (loggedIn ? "已初始化 · 后台无头就绪" : "待登录 · 可在终端执行 claude auth login"));
 
         return new AccountPoolEntry(
             workspace.Id, workspace.DisplayName, ClientKind.Claude, workspace.Kind,
             health, ready, engine, info?.Email, info?.SubscriptionType ?? "Claude",
             null, null, null, null, null, null, null, null, null, null, null,
-            activeTasks, turns, inTok, outTok, status, DateTimeOffset.UtcNow);
+            activeTasks, turns, inTok, outTok, status, now);
     }
 
     private AccountPoolEntry BuildAntigravityEntry(
@@ -531,6 +539,7 @@ public sealed class AccountPoolService : IDisposable
         var model = rec?.Model ?? workspace.DefaultModel ?? preset.DefaultModel;
         var inCooldown = _cooldownUntilUtc.TryGetValue(workspace.Id, out var until) && until > now;
         var isLocalOllama = string.Equals(preset.Id, "ollama", StringComparison.OrdinalIgnoreCase);
+        var hasRequiredKey = rec is null || !preset.RequiresApiKey || DpapiSecretProtector.CanUnprotect(rec.EncryptedApiKey);
 
         var totalTok = inTok + outTok;
         decimal? usedPct = null;
@@ -543,19 +552,23 @@ public sealed class AccountPoolService : IDisposable
             remPct = Math.Clamp(100m - usedPct.Value, 0m, 100m);
         }
 
-        var health = inCooldown || (usedPct is not null && usedPct >= thresholdPercent)
-            ? AccountQuotaHealth.Exhausted
-            : (usedPct is not null && usedPct >= Math.Max(70, thresholdPercent - 15))
-                ? AccountQuotaHealth.Warning
-                : AccountQuotaHealth.Healthy;
+        var health = !hasRequiredKey
+            ? AccountQuotaHealth.Unauthenticated
+            : inCooldown || (usedPct is not null && usedPct >= thresholdPercent)
+                ? AccountQuotaHealth.Exhausted
+                : (usedPct is not null && usedPct >= Math.Max(70, thresholdPercent - 15))
+                    ? AccountQuotaHealth.Warning
+                    : AccountQuotaHealth.Healthy;
 
         var status = activeTasks > 0
             ? $"⚡ 正在直连执行 ({activeTasks})"
-            : inCooldown
-                ? $"限流冷却 · {FormatCountdown(until - now)}后恢复"
-                : rec?.TokenBudgetLimit is > 0
-                    ? $"预算余量 {remPct:0}% · 免客户端直连"
-                    : $"免客户端就绪 · 内置工具链 ({model})";
+            : !hasRequiredKey
+                ? "待配置密钥 · 点击编辑填入 API Key"
+                : inCooldown
+                    ? $"限流冷却 · {FormatCountdown(until - now)}后恢复"
+                    : rec?.TokenBudgetLimit is > 0
+                        ? $"预算余量 {remPct:0}% · 免客户端直连"
+                        : $"免客户端就绪 · 内置工具链 ({model})";
 
         return new AccountPoolEntry(
             workspace.Id,
@@ -563,7 +576,7 @@ public sealed class AccountPoolService : IDisposable
             ClientKind.DirectApi,
             workspace.Kind,
             health,
-            !inCooldown,
+            hasRequiredKey && !inCooldown,
             $"内置直连 · {preset.Badge}",
             rec?.MaskedApiKey,
             model,
@@ -729,14 +742,46 @@ public sealed class AccountPoolService : IDisposable
             foreach (var id in triedWorkspaceIds) excluded.Add(id);
         }
 
+        var origin = workspaces.FirstOrDefault(w => string.Equals(w.Id, currentWorkspaceId, StringComparison.Ordinal));
+        var now = DateTimeOffset.UtcNow;
+
+        bool IsNonCodexHealthyReady(CodexWorkspace w)
+        {
+            if (IsPreFlightExhausted(w.Id, failoverThresholdPercent)) return false;
+            return w.Client switch
+            {
+                ClientKind.DirectApi => BuildDirectApiEntry(w, 0, 0, 0, 0, now, failoverThresholdPercent).AuthReady,
+                ClientKind.MarketCli => BuildMarketCliEntry(w, workspaces, 0, 0, 0, 0, now, failoverThresholdPercent).AuthReady,
+                ClientKind.Antigravity => BuildAntigravityEntry(w, 0, 0, 0, 0, now, failoverThresholdPercent).AuthReady,
+                ClientKind.Claude => BuildClaudeEntry(w, 0, 0, 0, 0).AuthReady,
+                _ => false,
+            };
+        }
+
+        // 1. Prefer healthy fallback of the same engine family first (preserving prompt/tool behavior)
+        if (origin is not null && origin.Client != ClientKind.Codex)
+        {
+            var sameFamily = workspaces
+                .Where(w => w.Client == origin.Client && !excluded.Contains(w.Id))
+                .FirstOrDefault(IsNonCodexHealthyReady);
+            if (sameFamily is not null) return sameFamily;
+        }
+
+        // 2. Best Codex pool account
         var bestCodex = SelectBestCodexWorkspace(workspaces, excluded, failoverThresholdPercent);
         if (bestCodex is not null) return bestCodex;
 
-        var now = DateTimeOffset.UtcNow;
+        // 3. Any other healthy DirectApi / MarketCli / Antigravity / Claude account
         return workspaces
-            .Where(w => w.Client is ClientKind.DirectApi or ClientKind.MarketCli && !excluded.Contains(w.Id))
-            .FirstOrDefault(w => !IsPreFlightExhausted(w.Id, failoverThresholdPercent)
-                && (w.Client == ClientKind.DirectApi || BuildMarketCliEntry(w, workspaces, 0, 0, 0, 0, now, failoverThresholdPercent).AuthReady));
+            .Where(w => w.Client is ClientKind.DirectApi or ClientKind.MarketCli or ClientKind.Antigravity or ClientKind.Claude && !excluded.Contains(w.Id))
+            .OrderBy(w => w.Client switch
+            {
+                ClientKind.DirectApi => 0,
+                ClientKind.MarketCli => 1,
+                ClientKind.Antigravity => 2,
+                _ => 3,
+            })
+            .FirstOrDefault(IsNonCodexHealthyReady);
     }
 
     public CodexWorkspace? SelectBestCodexWorkspace(
@@ -788,6 +833,14 @@ public sealed class AccountPoolService : IDisposable
             if (usedPct >= failoverThresholdPercent || usedPct >= 99m) return true;
         }
 
+        if (_antigravityUsage.TryGetValue(workspaceId, out var agySnap))
+        {
+            var agyPrimary = agySnap.PrimaryUsedPercent ?? 0m;
+            var agySecondary = agySnap.SecondaryUsedPercent ?? 0m;
+            if (agyPrimary >= failoverThresholdPercent || agySecondary >= failoverThresholdPercent || agyPrimary >= 99m || agySecondary >= 99m)
+                return true;
+        }
+
         if (!_snapshots.TryGetValue(workspaceId, out var snapshot)) return false;
         decimal? used = snapshot.State == CodexUsageState.Available ? (snapshot.PrimaryUsedPercent ?? 0m) : snapshot.PrimaryUsedPercent;
         decimal? sec = snapshot.State == CodexUsageState.Available ? (snapshot.SecondaryUsedPercent ?? 0m) : snapshot.SecondaryUsedPercent;
@@ -797,9 +850,9 @@ public sealed class AccountPoolService : IDisposable
     public static bool IsQuotaOrRateLimitFailure(string? message)
     {
         if (string.IsNullOrWhiteSpace(message)) return false;
+        if (Http429Regex().IsMatch(message)) return true;
         string[] markers =
         [
-            "429",
             "rate limit",
             "rate_limit",
             "usage limit",
@@ -809,12 +862,16 @@ public sealed class AccountPoolService : IDisposable
             "too many requests",
             "reached your usage",
             "hit your limit",
+            "resource_exhausted",
             "额度已用尽",
             "配额不足",
             "触发限流",
         ];
         return markers.Any(marker => message.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
+
+    [GeneratedRegex(@"(?<!\d)429(?!\d)", RegexOptions.CultureInvariant)]
+    private static partial Regex Http429Regex();
 
     private static AccountQuotaHealth ClassifyHealth(
         CodexUsageSnapshot snapshot,

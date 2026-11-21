@@ -16,6 +16,8 @@ public sealed class ArenaContestant
     public string WorkspaceName { get; set; } = string.Empty;
     public ClientKind Client { get; set; } = ClientKind.Codex;
     public string? Model { get; set; }
+    public string? ReasoningEffort { get; set; }
+    public string? ServiceTier { get; set; }
     public string WorktreePath { get; set; } = string.Empty;
     public string BranchName { get; set; } = string.Empty;
     public ArenaRunState State { get; set; } = ArenaRunState.Pending;
@@ -42,7 +44,12 @@ public sealed class ArenaSession
     public List<ArenaContestant> Contestants { get; set; } = [];
 }
 
-public sealed record ArenaContestantSpec(string Label, string WorkspaceId, string? Model = null);
+public sealed record ArenaContestantSpec(
+    string Label,
+    string WorkspaceId,
+    string? Model = null,
+    string? ReasoningEffort = null,
+    string? ServiceTier = null);
 
 /// <summary>
 /// Orchestrates side-by-side multi-account / multi-model coding races ("赛马竞技场")
@@ -61,6 +68,7 @@ public sealed class ArenaService
     private readonly object _gate = new();
     private readonly List<ArenaSession> _sessions;
     private readonly Dictionary<string, CancellationTokenSource> _activeRuns = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Task> _activeTasks = new(StringComparer.Ordinal);
 
     public ArenaService(
         string projectRoot,
@@ -141,6 +149,8 @@ public sealed class ArenaService
                 WorkspaceName = workspace.DisplayName,
                 Client = workspace.Client,
                 Model = string.IsNullOrWhiteSpace(spec.Model) ? null : spec.Model.Trim(),
+                ReasoningEffort = string.IsNullOrWhiteSpace(spec.ReasoningEffort) ? null : spec.ReasoningEffort.Trim().ToLowerInvariant(),
+                ServiceTier = string.IsNullOrWhiteSpace(spec.ServiceTier) ? null : spec.ServiceTier.Trim().ToLowerInvariant(),
                 WorktreePath = wt.WorktreePath,
                 BranchName = wt.BranchName,
                 State = ArenaRunState.Pending,
@@ -152,11 +162,11 @@ public sealed class ArenaService
         {
             _sessions.Insert(0, session);
             _activeRuns[session.Id] = cts;
+            _activeTasks[session.Id] = ExecuteRaceInBackgroundAsync(session, cts);
             SaveUnlocked();
         }
         SessionUpdated?.Invoke(session);
 
-        _ = ExecuteRaceInBackgroundAsync(session, cts);
         return session;
     }
 
@@ -171,6 +181,7 @@ public sealed class ArenaService
             lock (_gate)
             {
                 _activeRuns.Remove(session.Id);
+                _activeTasks.Remove(session.Id);
                 SaveUnlocked();
             }
             cts.Dispose();
@@ -186,7 +197,7 @@ public sealed class ArenaService
             ?? throw new InvalidOperationException("找不到参赛账号。");
 
         var uiSettings = _settings?.Invoke() ?? new UiSettings();
-        if (_accountPool is not null && workspace.Client is ClientKind.Codex or ClientKind.DirectApi or ClientKind.MarketCli
+        if (_accountPool is not null && workspace.Client is ClientKind.Codex or ClientKind.DirectApi or ClientKind.MarketCli or ClientKind.Antigravity or ClientKind.Claude
             && uiSettings.AutoFailoverEnabled
             && _accountPool.IsPreFlightExhausted(workspace.Id, uiSettings.FailoverThresholdPercent))
         {
@@ -208,7 +219,7 @@ public sealed class ArenaService
         lock (_gate) contestant.State = ArenaRunState.Running;
         SessionUpdated?.Invoke(session);
 
-        var agent = new GroupChatAgent(contestant.Id, "ArenaAgent", workspace.Id, contestant.Model);
+        var agent = new GroupChatAgent(contestant.Id, "ArenaAgent", workspace.Id, contestant.Model, contestant.ReasoningEffort, contestant.ServiceTier);
         var fullPrompt = $"你正在参与多智能体并行开发竞技场（独立 Git 分支 {contestant.BranchName}）。\n"
             + "请直接在当前工作目录完成以下开发任务，确保代码完整、可编译，并简要总结你的设计思路与改动要点：\n\n"
             + session.Prompt;
@@ -345,15 +356,71 @@ public sealed class ArenaService
         return mergeSummary;
     }
 
+    public async Task<int> CleanupSessionWorktreesAsync(string sessionId, bool keepWinner = true, CancellationToken token = default)
+    {
+        ArenaSession session;
+        ArenaContestant[] targets;
+        lock (_gate)
+        {
+            session = _sessions.FirstOrDefault(s => s.Id == sessionId) ?? throw new InvalidOperationException("找不到该赛马场次。");
+            if (_activeRuns.ContainsKey(sessionId)) throw new InvalidOperationException("请先停止正在运行的赛马场次，再清理分支目录。");
+            targets = session.Contestants
+                .Where(c => !string.IsNullOrWhiteSpace(c.WorktreePath) && (!keepWinner || (c.Id != session.MergedContestantId && c.State != ArenaRunState.Merged)))
+                .ToArray();
+        }
+
+        var cleaned = 0;
+        foreach (var c in targets)
+        {
+            try
+            {
+                if (Directory.Exists(c.WorktreePath))
+                {
+                    await _git.RemoveWorktreeAsync(session.RepositoryRoot, c.WorktreePath, force: true, token).ConfigureAwait(false);
+                    cleaned++;
+                }
+            }
+            catch { }
+        }
+        return cleaned;
+    }
+
+    public async Task DeleteSessionAsync(string sessionId, CancellationToken token = default)
+    {
+        StopRace(sessionId);
+        Task? runningTask;
+        lock (_gate) _activeTasks.TryGetValue(sessionId, out runningTask);
+        if (runningTask is not null)
+        {
+            try { await runningTask.WaitAsync(TimeSpan.FromSeconds(3), token).ConfigureAwait(false); } catch { }
+        }
+
+        _ = await CleanupSessionWorktreesAsync(sessionId, keepWinner: false, token).ConfigureAwait(false);
+        lock (_gate)
+        {
+            _sessions.RemoveAll(s => s.Id == sessionId);
+            SaveUnlocked();
+        }
+    }
+
     public async Task ShutdownAsync()
     {
-        CancellationTokenSource[] active;
-        lock (_gate) active = _activeRuns.Values.ToArray();
-        foreach (var cts in active)
+        CancellationTokenSource[] activeCts;
+        Task[] activeTasks;
+        lock (_gate)
+        {
+            activeCts = _activeRuns.Values.ToArray();
+            activeTasks = _activeTasks.Values.ToArray();
+        }
+        foreach (var cts in activeCts)
         {
             try { cts.Cancel(); } catch { }
         }
-        await Task.Delay(120).ConfigureAwait(false);
+        if (activeTasks.Length > 0)
+        {
+            try { await Task.WhenAll(activeTasks).WaitAsync(TimeSpan.FromSeconds(4)).ConfigureAwait(false); }
+            catch { }
+        }
     }
 
     private static async Task CommitWorktreeIfNeededAsync(string worktreePath, string message, CancellationToken token)

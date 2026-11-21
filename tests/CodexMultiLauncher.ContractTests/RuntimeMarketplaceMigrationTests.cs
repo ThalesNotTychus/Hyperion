@@ -89,6 +89,11 @@ internal static class RuntimeMarketplaceMigrationTests
 
     private static async Task RealAppServerMigrationPreservesTheRestAsync()
     {
+        if (Environment.GetEnvironmentVariable("CI") == "true" && CodexExecutableLocator.TryFindCurrentCandidate() is null)
+        {
+            Console.WriteLine("SKIP RealAppServerMigrationPreservesTheRestAsync on CI runner without local Codex binary.");
+            return;
+        }
         var boundary = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "CodexMultiLauncher.RuntimeMarketplace"));
         var root = ProfilePathSafety.GetContainedFullPath(boundary, "中文 😀 " + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);

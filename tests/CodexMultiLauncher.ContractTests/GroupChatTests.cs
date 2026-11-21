@@ -163,6 +163,11 @@ internal static class GroupChatTests
     }
     private static async Task VerifyInstalledCliFlagsAsync(GroupChatRun request)
     {
+        if (Environment.GetEnvironmentVariable("CI") == "true" && CodexExecutableLocator.TryFindCurrentCandidate() is null)
+        {
+            Console.WriteLine("SKIP VerifyInstalledCliFlagsAsync on CI runner without local Codex binary.");
+            return;
+        }
         var start = CodexGroupChatRunner.CreateStartInfo(CodexExecutableLocator.FindCurrentCandidateOrThrow(), request);
         start.ArgumentList.Add("--help");
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start real Codex CLI help probe.");

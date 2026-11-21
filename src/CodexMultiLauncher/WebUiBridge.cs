@@ -78,6 +78,10 @@ internal sealed class WebUiBridge
                 catch (InvalidOperationException) { }
                 return new { ok = true };
 
+            case "window.syncTheme":
+                _host.ApplyNativeChromeTheme(GetString(p, "theme"));
+                return new { ok = true };
+
             case "settings.update":
             {
                 var current = _host.CurrentSettings;
@@ -384,7 +388,8 @@ internal sealed class WebUiBridge
             {
                 var roomId = RequireString(p, "roomId");
                 var text = RequireString(p, "text");
-                _host.StartRoomSend(roomId, text);
+                var attachments = ParseAttachments(p);
+                _host.StartRoomSend(roomId, text, attachments);
                 return new { started = true };
             }
 
@@ -444,6 +449,23 @@ internal sealed class WebUiBridge
                 var contestantId = RequireString(p, "contestantId");
                 var message = await _host.Arena.MergeWinnerAsync(sessionId, contestantId, _host.LifetimeToken);
                 return new { message, sessions = _host.Arena.GetSessions() };
+            }
+
+            case "arena.cleanup":
+            {
+                var sessionId = RequireString(p, "sessionId");
+                var keepWinner = GetBool(p, "keepWinner") ?? false;
+                var cleaned = await _host.Arena.CleanupSessionWorktreesAsync(sessionId, keepWinner, _host.LifetimeToken);
+                _host.PushToast("success", cleaned > 0 ? $"✓ 已清理 {cleaned} 个赛马临时 Worktree 分支目录" : "当前场次无可清理的残留 Worktree 目录");
+                return new { cleaned, sessions = _host.Arena.GetSessions() };
+            }
+
+            case "arena.delete":
+            {
+                var sessionId = RequireString(p, "sessionId");
+                await _host.Arena.DeleteSessionAsync(sessionId, _host.LifetimeToken);
+                _host.PushToast("info", "已移除该场赛马记录并清理关联隔离目录");
+                return new { sessions = _host.Arena.GetSessions() };
             }
 
             case "terminal.create":
@@ -567,6 +589,34 @@ internal sealed class WebUiBridge
         return list;
     }
 
+    private static IReadOnlyList<ChatImageAttachment>? ParseAttachments(JsonElement p)
+    {
+        if (p.ValueKind != JsonValueKind.Object || !p.TryGetProperty("attachments", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var list = new List<ChatImageAttachment>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            if (list.Count >= 8) break;
+            var mime = GetString(item, "mimeType") ?? "image/png";
+            var b64 = GetString(item, "base64Data");
+            if (string.IsNullOrWhiteSpace(b64) && GetString(item, "dataUrl") is { } dataUrl)
+            {
+                var commaIdx = dataUrl.IndexOf(',');
+                if (commaIdx > 0 && dataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var header = dataUrl[5..commaIdx];
+                    var semiIdx = header.IndexOf(';');
+                    if (semiIdx > 0) mime = header[..semiIdx];
+                    b64 = dataUrl[(commaIdx + 1)..];
+                }
+            }
+            if (string.IsNullOrWhiteSpace(b64) || b64.Length > 16_000_000) continue;
+            list.Add(new ChatImageAttachment(mime, b64.Trim(), GetString(item, "label")));
+        }
+        return list.Count > 0 ? list : null;
+    }
+
     private static IReadOnlyList<ArenaContestantSpec> ParseArenaSpecs(JsonElement p)
     {
         if (!p.TryGetProperty("contestants", out var arr) || arr.ValueKind != JsonValueKind.Array)
@@ -577,7 +627,9 @@ internal sealed class WebUiBridge
             list.Add(new ArenaContestantSpec(
                 GetString(item, "label") ?? string.Empty,
                 RequireString(item, "workspaceId"),
-                GetString(item, "model")));
+                GetString(item, "model"),
+                GetString(item, "reasoningEffort"),
+                GetString(item, "serviceTier")));
         }
         return list;
     }

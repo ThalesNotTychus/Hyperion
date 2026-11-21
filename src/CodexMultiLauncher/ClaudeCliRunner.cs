@@ -36,7 +36,26 @@ public sealed class ClaudeCliRunner : IGroupChatRunner
         _onTokenUsage = onTokenUsage;
     }
 
+    private static (string? Path, long ExpiresTick) _cachedGlobalCli;
+
+    public static void InvalidateCliCache() => _cachedGlobalCli = default;
+
     public static string? TryFindClaudeCliExecutable(CodexWorkspace? preferredWorkspace = null, IEnumerable<CodexWorkspace>? allWorkspaces = null)
+    {
+        if (preferredWorkspace is null)
+        {
+            var cached = _cachedGlobalCli;
+            if (Environment.TickCount64 < cached.ExpiresTick)
+                return cached.Path;
+        }
+
+        var resolved = TryFindClaudeCliExecutableCore(preferredWorkspace, allWorkspaces);
+        if (preferredWorkspace is null)
+            _cachedGlobalCli = (resolved, Environment.TickCount64 + 30_000);
+        return resolved;
+    }
+
+    private static string? TryFindClaudeCliExecutableCore(CodexWorkspace? preferredWorkspace, IEnumerable<CodexWorkspace>? allWorkspaces)
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var envLocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
@@ -311,9 +330,16 @@ public sealed class ClaudeCliRunner : IGroupChatRunner
 
         var sessionKey = $"{request.WorkingDirectory}::{request.Agent.Id}::{request.Workspace.Id}";
         _sessionIds.TryGetValue(sessionKey, out var existingSession);
-        var startInfo = existingSession is not null && _createStart.Target is ClaudeCliRunner
+        var isResuming = existingSession is not null && _createStart.Target is ClaudeCliRunner;
+        var startInfo = isResuming
             ? CreateStartInfo(FindClaudeCliExecutableOrThrow(request.Workspace), request, existingSession)
             : _createStart(request);
+
+        // Avoid O(N^2) prompt bloat: when resuming a stateful Claude session, send only incremental delta!
+        var effectiveInput = isResuming && !string.IsNullOrWhiteSpace(request.IncrementalPrompt)
+            ? request.IncrementalPrompt!
+            : request.Prompt;
+        var stagedFiles = StageImageAttachmentsForCli(request.Attachments, ref effectiveInput);
 
         using var process = new Process { StartInfo = startInfo };
         var started = false;
@@ -335,7 +361,7 @@ public sealed class ClaudeCliRunner : IGroupChatRunner
                 sid => _sessionIds[sessionKey] = sid,
                 (inTok, outTok) => _onTokenUsage?.Invoke(request.Workspace.Id, inTok, outTok),
                 linked.Token);
-            await process.StandardInput.WriteAsync(request.Prompt.AsMemory(), linked.Token).ConfigureAwait(false);
+            await process.StandardInput.WriteAsync(effectiveInput.AsMemory(), linked.Token).ConfigureAwait(false);
             process.StandardInput.Close();
             await stdoutTask.ConfigureAwait(false);
 
@@ -349,6 +375,12 @@ public sealed class ClaudeCliRunner : IGroupChatRunner
             if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(finalAnswer))
             {
                 var err = stderrTask is not null ? (await stderrTask.ConfigureAwait(false)).Trim() : string.Empty;
+                if (isResuming)
+                {
+                    // Stale resumed session ID — clear it and retry once with full context
+                    _sessionIds.TryRemove(sessionKey, out _);
+                    return await RunAsync(request with { IncrementalPrompt = null }, progress, token).ConfigureAwait(false);
+                }
                 if (err.Contains("unknown option", StringComparison.OrdinalIgnoreCase) &&
                     (request.Agent.ReasoningEffort is not null || request.Agent.ServiceTier is not null))
                 {
@@ -365,12 +397,46 @@ public sealed class ClaudeCliRunner : IGroupChatRunner
         }
         finally
         {
+            CleanupStagedFiles(stagedFiles);
             if (started)
             {
                 StopOwned(process);
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(3));
                 try { await process.WaitForExitAsync(cleanup.Token).ConfigureAwait(false); } catch { }
             }
+        }
+    }
+
+    internal static List<string> StageImageAttachmentsForCli(IReadOnlyList<ChatImageAttachment>? attachments, ref string promptText)
+    {
+        var staged = new List<string>();
+        if (attachments is not { Count: > 0 }) return staged;
+        var dir = Path.Combine(Path.GetTempPath(), "Hyperion.Captures");
+        Directory.CreateDirectory(dir);
+        var sb = new StringBuilder(promptText);
+        sb.AppendLine().AppendLine().AppendLine("附加视觉截图文件（可直接读取查看画面）：");
+        foreach (var att in attachments)
+        {
+            if (string.IsNullOrWhiteSpace(att.Base64Data)) continue;
+            try
+            {
+                var ext = att.MimeType?.Contains("jpeg", StringComparison.OrdinalIgnoreCase) == true ? ".jpg" : ".png";
+                var file = Path.Combine(dir, $"capture-{Guid.NewGuid():N}{ext}");
+                File.WriteAllBytes(file, Convert.FromBase64String(att.Base64Data));
+                staged.Add(file);
+                sb.Append("- ").Append(att.Label ?? "UI Screenshot").Append(": ").AppendLine(file);
+            }
+            catch { }
+        }
+        promptText = sb.ToString();
+        return staged;
+    }
+
+    internal static void CleanupStagedFiles(IEnumerable<string> files)
+    {
+        foreach (var f in files)
+        {
+            try { if (File.Exists(f)) File.Delete(f); } catch { }
         }
     }
 

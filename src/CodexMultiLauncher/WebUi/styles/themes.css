@@ -7,6 +7,11 @@
      4. data-theme="aurora"   — 极光毛玻璃 (Nordic Translucent Night)
    ========================================================================== */
 
+:root {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Consolas", "Courier New", monospace;
+}
+
 :root,
 [data-theme="obsidian"] {
   color-scheme: dark;
@@ -20,8 +25,8 @@
   --bg-active: rgba(99, 102, 241, 0.16);
   --bg-input: #0c1018;
   --bg-code: #090c12;
-  --bg-user-msg: rgba(56, 189, 248, 0.09);
-  --bg-agent-msg: #131824;
+  --bg-user-msg: #1a2234;
+  --bg-agent-msg: transparent;
 
   --border-subtle: #1c2434;
   --border-strong: #2a364f;
@@ -33,6 +38,7 @@
   --text-inverse: #ffffff;
 
   --accent: #6366f1;
+  --accent-primary: var(--accent);
   --accent-hover: #4f46e5;
   --accent-soft: rgba(99, 102, 241, 0.15);
   --accent-cyan: #38bdf8;
@@ -75,8 +81,8 @@
   --bg-active: rgba(16, 185, 129, 0.16);
   --bg-input: #05080b;
   --bg-code: #030507;
-  --bg-user-msg: rgba(16, 185, 129, 0.09);
-  --bg-agent-msg: #0a0f14;
+  --bg-user-msg: #0e1a22;
+  --bg-agent-msg: transparent;
 
   --border-subtle: #14222e;
   --border-strong: #1e3547;
@@ -88,6 +94,7 @@
   --text-inverse: #04130d;
 
   --accent: #10b981;
+  --accent-primary: var(--accent);
   --accent-hover: #059669;
   --accent-soft: rgba(16, 185, 129, 0.15);
   --accent-cyan: #22d3ee;
@@ -120,21 +127,21 @@
 /* Style 3: Daylight Studio (Refined Alabaster & Pure White, Crisp Studio Aesthetic) */
 [data-theme="daylight"] {
   color-scheme: light;
-  --bg-app: #f4f6fa;
-  --bg-topbar: #ffffff;
-  --bg-rail: #eef2f7;
-  --bg-sidebar: #f8fafd;
+  --bg-app: #ffffff;
+  --bg-topbar: #f8f9fb;
+  --bg-rail: #f3f5f8;
+  --bg-sidebar: #f8f9fb;
   --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-hover: #edf2f9;
-  --bg-active: rgba(37, 99, 235, 0.1);
+  --bg-hover: rgba(15, 23, 42, 0.045);
+  --bg-active: rgba(15, 23, 42, 0.065);
   --bg-input: #ffffff;
-  --bg-code: #f1f5f9;
-  --bg-user-msg: #eff6ff;
-  --bg-agent-msg: #ffffff;
+  --bg-code: #f6f8fa;
+  --bg-user-msg: #f3f4f6;
+  --bg-agent-msg: transparent;
 
-  --border-subtle: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --border-subtle: #eaecf0;
+  --border-strong: #d0d5dd;
   --border-focus: #2563eb;
 
   --text-primary: #0f172a;
@@ -143,6 +150,7 @@
   --text-inverse: #ffffff;
 
   --accent: #2563eb;
+  --accent-primary: var(--accent);
   --accent-hover: #1d4ed8;
   --accent-soft: rgba(37, 99, 235, 0.1);
   --accent-cyan: #0284c7;
@@ -185,8 +193,8 @@
   --bg-active: rgba(139, 92, 246, 0.2);
   --bg-input: #151928;
   --bg-code: #10131f;
-  --bg-user-msg: rgba(45, 212, 191, 0.1);
-  --bg-agent-msg: #1d2236;
+  --bg-user-msg: #252b45;
+  --bg-agent-msg: transparent;
 
   --border-subtle: #2a314d;
   --border-strong: #3b4468;
@@ -198,6 +206,7 @@
   --text-inverse: #ffffff;
 
   --accent: #8b5cf6;
+  --accent-primary: var(--accent);
   --accent-hover: #7c3aed;
   --accent-soft: rgba(139, 92, 246, 0.18);
   --accent-cyan: #2dd4bf;

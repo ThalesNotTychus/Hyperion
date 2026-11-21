@@ -151,6 +151,11 @@ internal static class RegressionTests
 
     private static async Task RealAppServerMigrationAsync()
     {
+        if (Environment.GetEnvironmentVariable("CI") == "true" && CodexExecutableLocator.TryFindCurrentCandidate() is null)
+        {
+            Console.WriteLine("SKIP RealAppServerMigrationAsync on CI runner without local Codex binary.");
+            return;
+        }
         var root = Path.Combine(Path.GetTempPath(), "CodexMultiLauncher.Regression", "中文 😀 " + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         Exception? testFailure = null;
