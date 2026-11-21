@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Windows 下同时登录多个 Claude Code、Codex 与 Antigravity（反重力）账号防串号指南 | Hyperion</title>
+  <meta name="description" content="详解如何在同一台 Windows 10/11 电脑同时运行多个 Claude Code、OpenAI Codex 与 Google Antigravity (agy acp) 账号且物理隔离绝不串号：剖析 CLAUDE_CONFIG_DIR、CODEX_HOME 与 ANTIGRAVITY_CREDENTIAL_SCOPE 隔离机制与一键可视化配置。" />
+  <meta name="keywords" content="Claude Code 多账号,Claude Code 切换账号,Codex 多开,Codex 防串号,Antigravity 多账号,反重力 多开串号,agy acp 教程,CLAUDE_CONFIG_DIR,CODEX_HOME,Windows AI 编程工具" />
+  <link rel="canonical" href="https://thalesnottychus.github.io/Hyperion/guides/multi-account-isolation.html" />
+  <meta property="og:title" content="Windows 下同时登录多个 Claude Code、Codex 与 Antigravity 账号防串号实战指南" />
+  <meta property="og:description" content="按进程物理隔离 CLAUDE_CONFIG_DIR、CODEX_HOME 与 ANTIGRAVITY_CREDENTIAL_SCOPE，告别多订阅互相覆盖登录态。" />
+  <meta property="og:image" content="https://thalesnottychus.github.io/Hyperion/images/fleet-zh.png" />
+  <link rel="icon" type="image/png" href="../images/logo.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Windows 下同时登录多个 Claude Code、Codex 与 Antigravity（反重力）账号防串号指南",
+    "description": "详解同一台 Windows 电脑同时运行多个 Claude Code、OpenAI Codex 与 Google Antigravity 账号的目录与凭据作用域物理隔离方案。",
+    "author": { "@type": "Person", "name": "ThalesNotTychus" },
+    "datePublished": "2026-11-21",
+    "dateModified": "2026-11-21",
+    "mainEntityOfPage": "https://thalesnottychus.github.io/Hyperion/guides/multi-account-isolation.html"
+  }
+  </script>
+  <style>
+    :root { --bg:#060913; --card:#0d1426; --border:rgba(148,163,184,0.14); --text:#f8fafc; --sub:#cbd5e1; --muted:#94a3b8; --cyan:#38bdf8; --indigo:#6366f1; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei UI",sans-serif; line-height:1.75; }
+    a { color:var(--cyan); text-decoration:none; }
+    .nav { border-bottom:1px solid var(--border); background:rgba(6,9,19,0.88); position:sticky; top:0; backdrop-filter:blur(14px); z-index:20; }
+    .nav-in { max-width:920px; margin:0 auto; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; }
+    .brand { display:flex; align-items:center; gap:10px; color:#fff; font-weight:700; font-size:17px; }
+    .brand img { width:28px; height:28px; border-radius:7px; }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 15px; border-radius:9px; font-weight:600; font-size:13.5px; color:#fff; background:linear-gradient(135deg,#0ea5e9,#6366f1); }
+    main { max-width:860px; margin:0 auto; padding:44px 24px 80px; }
+    .crumb { font-size:13px; color:var(--muted); margin-bottom:16px; }
+    h1 { font-size:30px; line-height:1.3; margin-bottom:14px; letter-spacing:-0.02em; }
+    .meta { font-size:13px; color:var(--muted); margin-bottom:28px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+    h2 { font-size:21px; margin:34px 0 12px; color:#fff; }
+    p { color:var(--sub); margin-bottom:14px; font-size:15.5px; }
+    ul, ol { margin:8px 0 18px 22px; color:var(--sub); font-size:15px; }
+    li { margin-bottom:8px; }
+    pre { background:#090d18; border:1px solid var(--border); border-radius:10px; padding:14px 16px; overflow-x:auto; color:#e2e8f0; font-family:"Cascadia Code",Consolas,monospace; font-size:13px; margin:12px 0 20px; line-height:1.6; }
+    code { background:rgba(56,189,248,0.1); color:#7dd3fc; padding:2px 6px; border-radius:5px; font-family:"Cascadia Code",Consolas,monospace; font-size:13.5px; }
+    pre code { background:none; padding:0; color:inherit; }
+    .shot { width:100%; border-radius:12px; border:1px solid var(--border); margin:16px 0 24px; }
+    table { width:100%; border-collapse:collapse; margin:14px 0 24px; font-size:14px; }
+    th, td { border:1px solid var(--border); padding:10px 12px; text-align:left; }
+    th { background:var(--card); color:#fff; }
+    td { color:var(--sub); }
+    .cta-box { margin-top:40px; background:linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14)); border:1px solid rgba(56,189,248,0.4); border-radius:16px; padding:26px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .qr { flex-shrink:0; text-align:center; background:#090e1c; padding:12px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); }
+    .qr img { width:132px; height:132px; border-radius:8px; background:#fff; display:block; margin-bottom:6px; }
+    .qr span { font-size:12px; color:#e0f2fe; font-weight:700; }
+    @media (max-width:720px) { .cta-box { flex-direction:column; text-align:center; } }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-in">
+      <a class="brand" href="../"><img src="../images/logo.png" alt="Hyperion" /><span>Hyperion 实战指南</span></a>
+      <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion/releases/latest">⬇ 免费下载 Hyperion 便携版</a>
+    </div>
+  </header>
+  <main>
+    <div class="crumb"><a href="../">首页</a> / 多账号物理防串号指南</div>
+    <h1>Windows 下同时登录多个 Claude Code、Codex 与 Antigravity（反重力）账号防串号完整指南</h1>
+    <div class="meta">更新日期：2026-11-21 · 适用环境：Windows 10 / 11 (x64) · MIT 开源方案</div>
+
+    <p>重度使用 AI 编程智能体（<strong>Claude Code</strong>、<strong>OpenAI Codex</strong>、<strong>Google Antigravity 反重力</strong>）的开发者，几乎都踩过同一个坑：手头有 2～3 个 Pro/Max/Team 订阅账号想轮换使用，但在同一台 Windows 电脑上一旦在第二个终端执行登录，第一个窗口的会话令牌立刻被覆盖失效，甚至触发异常风控。</p>
+
+    <h2>一、为什么同平台多开在 Windows 上一定会「串号」？</h2>
+    <p>三大主流编程智能体在默认情况下都会读写当前系统用户的全局单例目录与系统凭据管理区：</p>
+    <table>
+      <thead>
+        <tr><th>智能体平台</th><th>默认冲突位置（串号根源）</th><th>官方合规物理隔离环境变量</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>OpenAI Codex</strong></td><td><code>%USERPROFILE%\.codex</code> 与 Electron 默认 UserData</td><td><code>CODEX_HOME</code> + <code>CODEX_SQLITE_HOME</code> + <code>--user-data-dir</code></td></tr>
+        <tr><td><strong>Claude Code</strong></td><td><code>%USERPROFILE%\.claude</code> 与全局 API 环境变量</td><td><code>CLAUDE_CONFIG_DIR</code> + 独立隔离 <code>USERPROFILE</code></td></tr>
+        <tr><td><strong>Google Antigravity</strong></td><td><code>%USERPROFILE%\.gemini</code> 与默认凭据命名空间</td><td><code>ANTIGRAVITY_GEMINI_DIR</code> + <code>ANTIGRAVITY_CREDENTIAL_SCOPE</code> + 官方 <code>agy acp</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>二、手动 PowerShell 隔离 vs Hyperion 进程级自动沙箱</h2>
+    <p>如果只靠手动写脚本启动，不仅每次开终端都要重新设置一整套环境变量，还很容易因为父进程残留的 <code>OPENAI_API_KEY</code> 或 <code>ANTHROPIC_API_KEY</code> 导致计费串台。例如标准的 Claude Code 独立号隔离需要：</p>
+    <pre><code>$env:CLAUDE_CONFIG_DIR = "D:\AgentProfiles\claude-pro-2\.claude"
+Remove-Item Env:ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+claude</code></pre>
+
+    <p>为了彻底消除手动切目录的繁琐并做到 <strong>100% 零封号风险（绝不读取或复制官方 <code>auth.json</code> / OAuth 令牌）</strong>，开源工作台 <a href="../"><strong>Hyperion</strong></a> 在底层直接实现了按子进程物理隔离的账号池与内置 ConPTY 伪终端：</p>
+    <img class="shot" src="../images/fleet-zh.png" alt="Hyperion 多账号隔离算力池与电量监控" />
+
+    <ul>
+      <li><strong>每个账号独立物理沙箱目录</strong>：新建「账号 2 / 账号 3」后，在内置分屏终端一键打开该账号专属登录环境，授权一次永久独立保存，多个账号可在同一个聊天室里用 <code>@账号1 @账号2</code> 同时干活。</li>
+      <li><strong>反重力官方标准 <code>agy acp</code> 直连</strong>：严格通过 Google 公开的 Agent Client Protocol 标准协议通信，本机已有登录态可直接免扫码复用；需要双开时也可一键接入<strong>免客户端 Gemini 直连 API</strong>（Windows DPAPI 硬件加密密钥），从根源杜绝 Google 账号串号。</li>
+      <li><strong>电池级实时余量监控</strong>：直观查看各账号 5 小时与 7 天剩余额度百分比，不用再盲猜哪个号快见底。</li>
+    </ul>
+
+    <h2>三、三步配置多账号同屏协同</h2>
+    <ol>
+      <li>前往 <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest">GitHub Releases</a> 下载 <code>Hyperion-portable-win-x64.zip</code>，解压双击 <code>Hyperion.exe</code>（单文件免安装，零 Node.js 依赖）。</li>
+      <li>点击左侧「账号池 → ＋添加账号 / Agent」，按需添加隔离 CLI / 桌面实例，或直接填入 OpenAI / Claude / Gemini / DeepSeek API Key。</li>
+      <li>打开你的代码仓库目录，直接回车用默认主力号编码，或输入 <code>@</code> 同时召唤多个不同平台智能体交叉评审！</li>
+    </ol>
+
+    <div class="cta-box">
+      <div>
+        <h2 style="margin-top:0">🎁 免费领《多账号防串号 &amp; 429 自动接力实战配置表》</h2>
+        <p style="margin-bottom:14px">在配置多账号隔离、API 聚合通道或远端 7×24h 开发机时遇到问题？微信扫描右侧二维码联系作者 Thales（系统自动秒通过），免费领取完整参数模板与一对一排障支持。</p>
+        <p style="margin-bottom:0;font-size:14px">延伸阅读：<a href="./quota-failover-429.html">解决 5 小时 429 限流自动换号接力 →</a> ｜ <a href="./remote-mac-agent-24x7.html">7×24h 远端物理 Mac mini 挂机指南 →</a></p>
+      </div>
+      <div class="qr">
+        <img src="../images/wecom-qr.png" alt="微信扫码联系作者领取配置手册" />
+        <span>微信扫码 · 秒过领手册</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hyperion · Multi-Account Claude Code, Codex &amp; Antigravity ACP Workspace for Windows</title>
+  <meta name="description" content="Run multiple Claude Code, OpenAI Codex, and Google Antigravity (official agy acp) accounts simultaneously on Windows without session cross-contamination. Live 5h/7d battery quota meters, automatic HTTP 429 failover, and parallel Git Worktree Arena with Split-Diff review." />
+  <meta name="keywords" content="Claude Code multiple accounts Windows,OpenAI Codex multi account,Claude Code 429 rate limit failover,Google Antigravity ACP client,agy acp Windows,Git worktree multi-agent IDE,Ollama coding agent Windows,Hyperion IDE" />
+  <link rel="canonical" href="https://thalesnottychus.github.io/Hyperion/en/" />
+  <link rel="alternate" hreflang="en" href="https://thalesnottychus.github.io/Hyperion/en/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://thalesnottychus.github.io/Hyperion/" />
+  <link rel="alternate" hreflang="x-default" href="https://thalesnottychus.github.io/Hyperion/en/" />
+  <meta property="og:title" content="Hyperion · Multi-Account Claude Code, Codex &amp; Antigravity Workspace for Windows" />
+  <meta property="og:description" content="Physical per-account isolation, live 5h/7d battery quota telemetry, automatic 429 failover, and headless Git Worktree Arena in one native .NET 10 Windows executable." />
+  <meta property="og:image" content="https://thalesnottychus.github.io/Hyperion/images/command-en.png" />
+  <link rel="icon" type="image/png" href="../images/logo.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Hyperion",
+    "operatingSystem": "Windows 10, Windows 11",
+    "applicationCategory": "DeveloperApplication",
+    "softwareVersion": "0.0.3",
+    "license": "https://opensource.org/licenses/MIT",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "downloadUrl": "https://github.com/ThalesNotTychus/Hyperion/releases/latest/download/Hyperion-portable-win-x64.zip",
+    "description": "Native .NET 10 + WebView2 + ConPTY multi-agent workspace for Windows with physical per-account isolation for Codex, Claude Code, and Google Antigravity (official ACP), live 5h/7d quota meters, automatic 429 failover, and parallel Git worktree Arena."
+  }
+  </script>
+  <style>
+    :root { --bg:#060913; --card:rgba(15,23,42,0.75); --border:rgba(148,163,184,0.14); --text:#f8fafc; --sub:#94a3b8; --cyan:#38bdf8; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:"Inter","Segoe UI Variable Display",system-ui,sans-serif; line-height:1.65; }
+    a { color:inherit; text-decoration:none; }
+    .nav { position:sticky; top:0; z-index:40; backdrop-filter:blur(16px); background:rgba(6,9,19,0.82); border-bottom:1px solid var(--border); }
+    .nav-in { max-width:1160px; margin:0 auto; padding:0 24px; height:64px; display:flex; align-items:center; justify-content:space-between; }
+    .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; }
+    .brand img { width:30px; height:30px; border-radius:8px; }
+    .tag { font-size:11px; font-family:Consolas,monospace; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.12); color:var(--cyan); border:1px solid rgba(56,189,248,0.28); }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:10px; font-weight:600; font-size:14px; border:1px solid var(--border); background:var(--card); }
+    .btn-primary { background:linear-gradient(135deg,#0ea5e9,#6366f1); border-color:rgba(125,211,252,0.4); color:#fff; }
+    .wrap { max-width:1160px; margin:0 auto; padding:0 24px; }
+    .hero { text-align:center; padding:72px 0 44px; }
+    h1 { font-size:clamp(34px,5vw,56px); line-height:1.12; letter-spacing:-0.03em; margin:16px 0 18px; }
+    .grad { background:linear-gradient(135deg,#38bdf8,#818cf8,#34d399); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .lead { max-width:780px; margin:0 auto 28px; color:var(--sub); font-size:17px; }
+    .ctas { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-bottom:36px; }
+    .shot { width:100%; border-radius:16px; border:1px solid var(--border); box-shadow:0 24px 64px rgba(0,0,0,0.65); }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin:56px 0; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; }
+    .card h3 { font-size:17px; margin-bottom:8px; }
+    .card p { font-size:14px; color:var(--sub); }
+    .faq { max-width:860px; margin:20px auto 72px; }
+    .faq h2 { font-size:26px; text-align:center; margin-bottom:22px; }
+    details { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:10px; }
+    summary { font-weight:700; cursor:pointer; }
+    details p { margin-top:10px; color:var(--sub); font-size:14.5px; }
+    footer { border-top:1px solid var(--border); padding:32px 0 44px; color:#64748b; font-size:13px; text-align:center; }
+    @media (max-width:860px) { .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-in">
+      <a href="./" class="brand"><img src="../images/logo.png" alt="Hyperion Logo" /><span>Hyperion</span><span class="tag">v0.0.3</span></a>
+      <div style="display:flex;gap:10px;align-items:center">
+        <a class="btn" href="../">简体中文</a>
+        <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion" target="_blank" rel="noopener">★ GitHub</a>
+        <a class="btn btn-primary" href="https://github.com/ThalesNotTychus/Hyperion/releases/latest/download/Hyperion-portable-win-x64.zip">⬇ Download Portable (.zip)</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="tag">MIT Open Source · Native .NET 10 + WebView2 + ConPTY · Zero Node.js</span>
+      <h1>Run Multiple Claude Code, Codex &amp; Antigravity Accounts<br/><span class="grad">Without Session Clashes or 429 Stalls</span></h1>
+      <p class="lead">Hyperion is a single-file native Windows IDE workspace that physically isolates multiple AI coding subscriptions per process, monitors live 5h/7d battery quotas with automatic <code>HTTP 429</code> failover, and races 2–6 models in parallel Git Worktrees with inline Split-Diff review.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="https://github.com/ThalesNotTychus/Hyperion/releases/latest/download/Hyperion-portable-win-x64.zip">⬇ Free Download for Windows 10/11 (x64)</a>
+        <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion" target="_blank" rel="noopener">View Source on GitHub</a>
+        <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion/discussions" target="_blank" rel="noopener">Community &amp; Guides</a>
+      </div>
+      <img class="shot" src="../images/command-en.png" alt="Hyperion Editorial Multi-Agent Workspace and Split-Diff Code Review" />
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>🛡️ Physical Multi-Account Isolation</h3>
+        <p>Isolates <code>CODEX_HOME</code>, <code>CLAUDE_CONFIG_DIR</code>, <code>USERPROFILE</code>, and <code>ANTIGRAVITY_CREDENTIAL_SCOPE</code> per child process so multiple Pro/Max/Team accounts run side-by-side without overwriting tokens.</p>
+      </div>
+      <div class="card">
+        <h3>⚡ Live 5h/7d Quotas &amp; Auto-Failover</h3>
+        <p>Reads official 5-hour and 7-day remaining quota windows. Automatically switches to a healthy backup account or fallback API in the same Git worktree on HTTP 429 rate limits.</p>
+      </div>
+      <div class="card">
+        <h3>🔌 Official Google Antigravity ACP</h3>
+        <p>Communicates strictly over Google's public Agent Client Protocol (<code>agy acp</code> JSON-RPC 2.0 over stdio), reusing existing sign-in state with zero ban risk.</p>
+      </div>
+      <div class="card">
+        <h3>🌿 Parallel Git Worktree Arena</h3>
+        <p>Benchmark 2–6 models (or multiple models on one API key) in isolated Git worktrees, run automated verification tests, review Split Diffs line-by-line, and merge the winner.</p>
+      </div>
+      <div class="card">
+        <h3>🧰 Zero-Download Built-In Agent Loop</h3>
+        <p>Connect OpenAI, Anthropic, Gemini Native, DeepSeek, OpenRouter, or local Ollama with built-in CRLF-preserving <code>edit_file</code>, <code>search_files</code>, multimodal vision, and DPAPI hardware encryption.</p>
+      </div>
+      <div class="card">
+        <h3>🎯 Dual WebView2 Visual Inspector</h3>
+        <p>Preview local web apps side-by-side, click any live DOM element or paste clipboard screenshots directly into multimodal agent prompts, paired with an integrated Windows ConPTY terminal.</p>
+      </div>
+    </section>
+
+    <section class="faq">
+      <h2>Frequently Asked Questions</h2>
+      <details open>
+        <summary>How do I use multiple Claude Code or Codex subscriptions on one Windows PC?</summary>
+        <p>Add isolated profiles in Hyperion's Accounts Pool. Each profile gets its own dedicated <code>CLAUDE_CONFIG_DIR</code> or <code>CODEX_HOME</code> sandbox — sign in once in the integrated ConPTY terminal and collaborate across <code>@Agent1 @Agent2</code> in one thread.</p>
+      </details>
+      <details>
+        <summary>Does Hyperion read, copy, or proxy official OAuth tokens (auth.json)?</summary>
+        <p>Never. Official CLIs manage their own authentication inside isolated directories, and Direct API keys are encrypted locally with Windows DPAPI (<code>CryptProtectData</code>).</p>
+      </details>
+      <details>
+        <summary>What happens when an account hits a 5-hour quota limit (HTTP 429) mid-task?</summary>
+        <p>With Auto-Failover enabled, Hyperion places the rate-limited account into cooldown and seamlessly continues your conversation on the healthiest same-engine backup account or Direct API fallback without losing context.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">Hyperion v0.0.3 · MIT License · <a href="https://github.com/ThalesNotTychus/Hyperion" style="color:#38bdf8">GitHub Repository</a> · <a href="../" style="color:#38bdf8">中文官网</a></div>
+  </footer>
+</body>
+</html>

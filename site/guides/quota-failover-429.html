@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>解决 Claude Code 与 Codex 5 小时限流（HTTP 429）：多订阅池自动换号接力实战 | Hyperion</title>
+  <meta name="description" content="长程重构跑一半撞上 Claude Code 5h rate limit 或 OpenAI Codex HTTP 429 Too Many Requests？详解 92% 预警阈值 + 毫秒级自动换号无缝续写上下文 + Git Worktree 多模型混合赛马的高性价比实战打法。" />
+  <meta name="keywords" content="Claude Code 429,Claude Code 5小时限流,Codex 额度不够,Codex 429 限流,AI 编程自动换号,多账号算力池,Git Worktree 赛马,Hyperion" />
+  <link rel="canonical" href="https://thalesnottychus.github.io/Hyperion/guides/quota-failover-429.html" />
+  <meta property="og:title" content="解决 Claude Code / Codex 5 小时限流（HTTP 429）：自动换号无缝接力指南" />
+  <meta property="og:description" content="实时读取 5h/7d 剩余配额百分比，主号触碰限流自动折跃至健康备用号或 API 节点，不丢上下文继续编码。" />
+  <meta property="og:image" content="https://thalesnottychus.github.io/Hyperion/images/command-zh.png" />
+  <link rel="icon" type="image/png" href="../images/logo.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "解决 Claude Code 与 Codex 5 小时限流（HTTP 429）：多订阅池自动换号接力实战",
+    "description": "详解多订阅池 5h/7d 配额监控、92% 预警换号与 HTTP 429 自动故障转移架构。",
+    "author": { "@type": "Person", "name": "ThalesNotTychus" },
+    "datePublished": "2026-11-21",
+    "dateModified": "2026-11-21",
+    "mainEntityOfPage": "https://thalesnottychus.github.io/Hyperion/guides/quota-failover-429.html"
+  }
+  </script>
+  <style>
+    :root { --bg:#060913; --card:#0d1426; --border:rgba(148,163,184,0.14); --text:#f8fafc; --sub:#cbd5e1; --muted:#94a3b8; --cyan:#38bdf8; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei UI",sans-serif; line-height:1.75; }
+    a { color:var(--cyan); text-decoration:none; }
+    .nav { border-bottom:1px solid var(--border); background:rgba(6,9,19,0.88); position:sticky; top:0; backdrop-filter:blur(14px); z-index:20; }
+    .nav-in { max-width:920px; margin:0 auto; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; }
+    .brand { display:flex; align-items:center; gap:10px; color:#fff; font-weight:700; font-size:17px; }
+    .brand img { width:28px; height:28px; border-radius:7px; }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 15px; border-radius:9px; font-weight:600; font-size:13.5px; color:#fff; background:linear-gradient(135deg,#0ea5e9,#6366f1); }
+    main { max-width:860px; margin:0 auto; padding:44px 24px 80px; }
+    .crumb { font-size:13px; color:var(--muted); margin-bottom:16px; }
+    h1 { font-size:30px; line-height:1.3; margin-bottom:14px; letter-spacing:-0.02em; }
+    .meta { font-size:13px; color:var(--muted); margin-bottom:28px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+    h2 { font-size:21px; margin:34px 0 12px; color:#fff; }
+    p { color:var(--sub); margin-bottom:14px; font-size:15.5px; }
+    ul, ol { margin:8px 0 18px 22px; color:var(--sub); font-size:15px; }
+    li { margin-bottom:8px; }
+    code { background:rgba(56,189,248,0.1); color:#7dd3fc; padding:2px 6px; border-radius:5px; font-family:"Cascadia Code",Consolas,monospace; font-size:13.5px; }
+    .shot { width:100%; border-radius:12px; border:1px solid var(--border); margin:16px 0 24px; }
+    .tip { border-left:3px solid var(--cyan); background:var(--card); padding:14px 18px; border-radius:0 10px 10px 0; margin:16px 0 22px; color:var(--sub); font-size:14.5px; }
+    .cta-box { margin-top:40px; background:linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14)); border:1px solid rgba(56,189,248,0.4); border-radius:16px; padding:26px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .qr { flex-shrink:0; text-align:center; background:#090e1c; padding:12px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); }
+    .qr img { width:132px; height:132px; border-radius:8px; background:#fff; display:block; margin-bottom:6px; }
+    .qr span { font-size:12px; color:#e0f2fe; font-weight:700; }
+    @media (max-width:720px) { .cta-box { flex-direction:column; text-align:center; } }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-in">
+      <a class="brand" href="../"><img src="../images/logo.png" alt="Hyperion" /><span>Hyperion 实战指南</span></a>
+      <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion/releases/latest">⬇ 免费下载 Hyperion 便携版</a>
+    </div>
+  </header>
+  <main>
+    <div class="crumb"><a href="../">首页</a> / 5 小时限流 429 自动换号接力方案</div>
+    <h1>解决 Claude Code 与 Codex 5 小时限流（HTTP 429）：多订阅算力池自动换号接力实战</h1>
+    <div class="meta">更新日期：2026-11-21 · 核心场景：多文件大型重构 / TDD 自动循环 / 并发赛马</div>
+
+    <p>当你让 Claude Code 或 Codex 执行跨十几个文件的架构重构并循环跑单元测试时，最崩溃的瞬间莫过于改到第 80% 突然弹出 <code>HTTP 429 Too Many Requests / 5-hour usage limit reached</code>：不仅思路被打断，手动切号重开会话还会把前面累积的上下文全部清零（或者因为重发超长历史导致新号瞬间也被扣光额度）。</p>
+
+    <h2>一、高性价比「主力订阅 + 备用号 / 按量 API 兜底」黄金配比</h2>
+    <div class="tip">
+      <strong>实战经验总结：</strong>与其盲目堆叠最高档单一账号，不如采用<strong>「2 个标准订阅号轮换吃满 5h 免费窗口 + 1 个直连按量 API（DeepSeek / OpenRouter / Claude API）兜底峰值」</strong>的梯度算力池，综合月度成本可降低 40%～60%，且全年零中断。
+    </div>
+
+    <img class="shot" src="../images/command-zh.png" alt="Hyperion 触发 429 自动换号接力与 Split Diff 逐行审查" />
+
+    <h2>二、Hyperion 如何做到「0 丢上下文」自动换号？</h2>
+    <p>开源工作台 <a href="../"><strong>Hyperion</strong></a> 内置了完整的 <code>AccountPoolService</code> 配额调度器与滑动窗口上下文引擎：</p>
+    <ol>
+      <li><strong>发车前预检（Pre-Flight Quota Guard）</strong>：通过官方只读接口实时获取 5h / 7d 剩余配额，当主力号使用率超过 <code>92%</code> 预警线时，发新消息自动优先路由至池内余量最充沛的同族账号。</li>
+      <li><strong>途中 429 毫秒级自动接力</strong>：若任务执行中途返回 <code>429</code> 或额度耗尽提示，系统自动将当前账号置入冷却期，挑选同引擎健康备用号（无同引擎时自动降级至直连 API 兜底号），<strong>在同一个 Git Worktree 分支内带着完整历史上下文无缝续写</strong>。</li>
+      <li><strong>增量会话与二分滑动折叠</strong>：正常多轮对话采用增量差量传输避免 $O(N^2)$ 重复消耗 Token；超长对话自动二分折叠早期轮次，保护新账号配额不被历史记录瞬间吃干。</li>
+    </ol>
+
+    <h2>三、进阶打法：Git Worktree 多模型并行赛马</h2>
+    <p>遇到棘手的并发 Bug 或核心算法设计时，切入「竞技场」勾选 2～4 个不同模型（甚至同一 API 账号下的不同模型槽位，如 <code>gpt-5.4</code> vs <code>claude-sonnet-4-5</code> vs <code>deepseek-reasoner</code>），系统会自动为每位选手派生独立 Git Worktree 并行编码 + 自动执行 <code>dotnet test</code> / <code>npm test</code>，谁单测全绿、Diff 最干净就一键合入主分支。</p>
+
+    <div class="cta-box">
+      <div>
+        <h2 style="margin-top:0">🎁 扫码领《多档位订阅配额对比与 API 兜底高性价比方案》</h2>
+        <p style="margin-bottom:14px">想知道不同开发强度下怎么搭配订阅号与稳定 API 通道最省钱？微信扫描右侧二维码联系作者 Thales（自动秒通过），免费领取实测配额表与参数配置指导。</p>
+        <p style="margin-bottom:0;font-size:14px">延伸阅读：<a href="./multi-account-isolation.html">← Windows 多账号物理防串号指南</a> ｜ <a href="./remote-mac-agent-24x7.html">7×24h 远端物理 Mac mini 挂机指南 →</a></p>
+      </div>
+      <div class="qr">
+        <img src="../images/wecom-qr.png" alt="微信扫码联系作者领取配额方案" />
+        <span>微信扫码 · 领省钱配额表</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

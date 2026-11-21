@@ -21,7 +21,14 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/command-zh.png" alt="Hyperion 项目工作台与并排 Diff 审查" width="100%" />
+  <img src="docs/images/hero-tour-zh.svg" alt="Hyperion 实机动态轮播：多智能体工作台、5h/7d 电池算力池、Git Worktree 赛马场与接入中心" width="100%" />
+</p>
+
+<p align="center">
+  📖 <strong>深度实战手册：</strong>
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/multi-account-isolation.html">Windows 多账号物理防串号</a> ·
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/quota-failover-429.html">解决 5 小时 429 限流自动换号接力</a> ·
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/remote-mac-agent-24x7.html">7×24h 远端独享物理 Mac mini (M4) 挂机实战</a>
 </p>
 
 ---

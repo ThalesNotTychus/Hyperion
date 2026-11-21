@@ -21,7 +21,15 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/command-en.png" alt="Hyperion Project Workspace & Split Diff Review" width="100%" />
+  <img src="docs/images/hero-tour-en.svg" alt="Hyperion Live Product Tour: Multi-Agent Workspace, 5h/7d Quota Pool, Git Worktree Arena & Universal Hub" width="100%" />
+</p>
+
+<p align="center">
+  📖 <strong>Engineering Guides:</strong>
+  <a href="https://thalesnottychus.github.io/Hyperion/en/">English Portal</a> ·
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/multi-account-isolation.html">Multi-Account Isolation Guide</a> ·
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/quota-failover-429.html">5h / HTTP 429 Auto-Failover</a> ·
+  <a href="https://thalesnottychus.github.io/Hyperion/guides/remote-mac-agent-24x7.html">24/7 Remote Mac mini (M4) Workflow</a>
 </p>
 
 ---

@@ -3,13 +3,64 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hyperion · 多智能体研发工作台 | Universal Multi-Agent Workspace for Windows</title>
-  <meta name="description" content="Hyperion 是基于 .NET 10 + 双 WebView2 + 原生 ConPTY 打造的 Windows 多编程智能体工作台：物理隔离 Codex、Claude Code 与 Antigravity 多账号防串号，实时监控 5h/7d 配额并在 429 限流时自动换号接力，支持一键 Git Worktree 多模型并行赛马与并排 Diff 逐行审查。" />
-  <meta property="og:title" content="Hyperion · Universal Multi-Agent Workspace for Windows" />
-  <meta property="og:description" content="Isolated multi-account pool, 5h/7d quota telemetry & auto-failover, official Antigravity ACP, and headless Git Worktree Arena for Windows." />
-  <meta property="og:image" content="https://raw.githubusercontent.com/ThalesNotTychus/Hyperion/main/docs/images/command-zh.png" />
+  <title>Hyperion · Claude Code / Codex / 反重力多账号防串号与 429 自动换号工作台 | Windows Multi-Agent IDE</title>
+  <meta name="description" content="Hyperion 是基于 .NET 10 + 双 WebView2 + 原生 ConPTY 的 Windows 多编程智能体工作台：物理隔离多个 Claude Code、OpenAI Codex 与 Google Antigravity (agy acp) 账号彻底防串号，实时监控 5h/7d 配额并在 429 限流时自动换号无缝接力，支持 Git Worktree 多模型并行赛马与并排 Split Diff 审查。" />
+  <meta name="keywords" content="Claude Code 多账号,Claude Code 429 限流,Codex 多开防串号,Antigravity 多账号,反重力 串号,agy acp,Git Worktree 多智能体,云端 Mac mini 挂机,Windows AI 编程工作台,Hyperion" />
+  <link rel="canonical" href="https://thalesnottychus.github.io/Hyperion/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://thalesnottychus.github.io/Hyperion/" />
+  <link rel="alternate" hreflang="en" href="https://thalesnottychus.github.io/Hyperion/en/" />
+  <link rel="alternate" hreflang="x-default" href="https://thalesnottychus.github.io/Hyperion/en/" />
+  <meta property="og:title" content="Hyperion · Claude Code / Codex / Antigravity 多账号隔离与 429 自动换号工作台" />
+  <meta property="og:description" content="物理隔离多账号防串号、5h/7d 电池配额监控与 429 自动换号接力、官方标准 agy acp 与 Git Worktree 多模型赛马。" />
+  <meta property="og:image" content="https://thalesnottychus.github.io/Hyperion/images/command-zh.png" />
   <meta name="theme-color" content="#070B14" />
   <link rel="icon" type="image/png" href="./images/logo.png" />
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Hyperion",
+      "operatingSystem": "Windows 10, Windows 11",
+      "applicationCategory": "DeveloperApplication",
+      "softwareVersion": "0.0.3",
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "downloadUrl": "https://github.com/ThalesNotTychus/Hyperion/releases/latest/download/Hyperion-portable-win-x64.zip",
+      "description": "Windows 多编程智能体总控工作台：进程级物理隔离 Claude Code、OpenAI Codex 与 Google Antigravity 多账号防串号，实时 5h/7d 电池配额与 HTTP 429 自动换号接力，支持 Git Worktree 并行赛马。"
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "如何在同一台 Windows 电脑同时登录多个 Claude Code、Codex 或 Antigravity（反重力）账号而不串号？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Hyperion 为每个实例分配独立隔离的 CLAUDE_CONFIG_DIR、CODEX_HOME 与 ANTIGRAVITY_CREDENTIAL_SCOPE 沙箱目录，在内置伪终端授权一次即可多账号并存并支持 @多账号 同屏协作。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "跑长程重构遇到 Claude Code 5 小时限流或 Codex HTTP 429 怎么办？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "开启顶栏「自动换号」后，当主账号配额超过 92% 或返回 429 时，Hyperion 会自动切换至池内健康的备用订阅号或直连 API 节点，在同一 Git 分支内无缝续写上下文。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Hyperion 会读取官方 auth.json 或导致封号吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "绝不读取、复制或中转任何官方 OAuth 令牌（auth.json），100% 调用官方公开 CLI 与 Google 标准 agy acp 协议；直连 API Key 采用 Windows DPAPI 本机硬件级加密存储。"
+          }
+        }
+      ]
+    }
+  ]
+  </script>
   <style>
     :root {
       --bg-base: #060913;
@@ -737,9 +788,11 @@
               <li data-zh="主力订阅 + 按量 API 混合赛马的高性价比打法" data-en="Hybrid subscription + pay-as-you-go API Arena strategy">主力订阅 + 按量 API 混合赛马的高性价比打法</li>
             </ul>
           </div>
-          <div>
-            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
-               data-zh="阅读多号配额规划与接力指南 →" data-en="Read Multi-Account Failover Guide →">阅读多号配额规划与接力指南 →</a>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <a class="playbook-link" href="./guides/quota-failover-429.html"
+               data-zh="阅读 429 自动接力与省钱配额指南 →" data-en="Read 429 Auto-Failover Guide →">阅读 429 自动接力与省钱配额指南 →</a>
+            <a class="playbook-link" href="./guides/multi-account-isolation.html"
+               data-zh="Windows 多账号防串号详解 →" data-en="Multi-Account Isolation Guide →">Windows 多账号防串号详解 →</a>
           </div>
         </div>
 
@@ -758,24 +811,24 @@
             </ul>
           </div>
           <div>
-            <a class="playbook-link" href="https://github.com/ThalesNotTychus/Hyperion/discussions/2" target="_blank" rel="noopener"
-               data-zh="查看远端 Mac 常驻环境配置指南 →" data-en="Read Remote Mac Setup Guide →">查看远端 Mac 常驻环境配置指南 →</a>
+            <a class="playbook-link" href="./guides/remote-mac-agent-24x7.html"
+               data-zh="查看远端物理 Mac 常驻实战方案 →" data-en="Read Remote Mac Setup Guide →">查看远端物理 Mac 常驻实战方案 →</a>
           </div>
         </div>
       </div>
 
       <div class="advisor-banner" id="advisor">
         <div class="advisor-copy">
-          <span class="playbook-tag" data-zh="💬 开发者交流 · 联系作者" data-en="💬 Developer Community · Contact Author">💬 开发者交流 · 联系作者</span>
-          <h3 data-zh="工作流交流、问题反馈与远端开发环境探讨" data-en="Workflow Feedback, CLI Suggestions &amp; Setup Discussions">工作流交流、问题反馈与远端开发环境探讨</h3>
-          <p data-zh="在使用 Hyperion 过程中遇到任何兼容性问题、希望许愿新功能，或想交流多账号防限流调优与 7×24h 远端 Mac 开发环境搭建方案，欢迎在 GitHub Discussions 留言，或直接用微信扫描右侧二维码联系作者 Thales。"
-             data-en="Have feedback, feature requests, or questions about multi-account quota setups and 24/7 remote Mac workflows? Open a thread on GitHub Discussions or scan via WeChat to connect with the author.">
-            在使用 Hyperion 过程中遇到任何兼容性问题、希望许愿新功能，或想交流多账号防限流调优与 7×24h 远端 Mac 开发环境搭建方案，欢迎在 GitHub Discussions 留言，或直接用微信扫描右侧二维码联系作者 Thales。
+          <span class="playbook-tag" data-zh="🎁 限时福利 · 扫码免费领实战配置包" data-en="🎁 Free Playbook &amp; Direct Author Support">🎁 限时福利 · 扫码免费领实战配置包</span>
+          <h3 data-zh="免费领取《Claude Code / Codex 多号防 429 组网与云端 M4 Mac 无人值守手册》" data-en="Get the Multi-Account Quota Playbook &amp; 24/7 Remote Mac Setup Kit">免费领取《Claude Code / Codex 多号防 429 组网与云端 M4 Mac 无人值守手册》</h3>
+          <p data-zh="微信扫描右侧二维码联系作者 Thales（企微自动秒通过），即可免费获取：① 多档位订阅配额实测对比与 92% 自动换号参数模板；② 高稳定 API 兜底算力池与独享物理 Mac mini (M4) 远端常驻方案；③ 一对一排查多开串号与 CLI 兼容问题。"
+             data-en="Scan via WeChat to connect directly with author Thales (instant auto-accept) for multi-account quota templates, hybrid API failover configs, and dedicated 24/7 Apple Silicon Mac mini (M4) remote workstation setups.">
+            微信扫描右侧二维码联系作者 Thales（企微自动秒通过），即可免费获取：① 多档位订阅配额实测对比与 92% 自动换号参数模板；② 高稳定 API 兜底算力池与独享物理 Mac mini (M4) 远端常驻方案；③ 一对一排查多开串号与 CLI 兼容问题。
           </p>
         </div>
         <div class="advisor-qr-box">
-          <img src="./images/wecom-qr.png" alt="作者企业微信二维码" />
-          <span data-zh="微信扫码 · 联系作者" data-en="Scan via WeChat">微信扫码 · 联系作者</span>
+          <img src="./images/wecom-qr.png" alt="微信扫码领多号防限流手册" />
+          <span data-zh="微信扫码 · 秒过领手册" data-en="Scan via WeChat">微信扫码 · 秒过领手册</span>
         </div>
       </div>
     </section>
@@ -849,8 +902,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Accept-Release.ps1
           </p>
         </div>
       </div>
+      <div style="margin-top:44px">
+        <h3 style="font-size:22px;text-align:center;margin-bottom:18px" data-zh="常见问题与长尾排障 FAQ" data-en="Frequently Asked Questions">常见问题与长尾排障 FAQ</h3>
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:900px;margin:0 auto">
+          <details open style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:12px;padding:14px 18px">
+            <summary style="font-weight:700;cursor:pointer" data-zh="如何在同一台 Windows 电脑同时登录多个 Claude Code、Codex 或反重力账号而不串号？" data-en="How do I run multiple Claude Code, Codex, or Antigravity accounts on one Windows PC?">如何在同一台 Windows 电脑同时登录多个 Claude Code、Codex 或反重力账号而不串号？</summary>
+            <p style="margin-top:8px;color:var(--text-secondary);font-size:14px">在「账号池」中添加独立实例后，Hyperion 会按子进程分配物理隔离的 <code>CLAUDE_CONFIG_DIR</code>、<code>CODEX_HOME</code> 与 <code>ANTIGRAVITY_CREDENTIAL_SCOPE</code> 沙箱目录，在内置伪终端完成一次登录即可长期并存并支持 <code>@多账号</code> 同屏协同。详见 <a href="./guides/multi-account-isolation.html" style="color:var(--accent-cyan)">《Windows 多账号防串号指南》</a>。</p>
+          </details>
+          <details style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:12px;padding:14px 18px">
+            <summary style="font-weight:700;cursor:pointer" data-zh="重构跑到一半遇到 Claude Code 5 小时限流或 Codex HTTP 429 怎么办？" data-en="What happens when an account hits a 5-hour quota limit (HTTP 429) mid-refactor?">重构跑到一半遇到 Claude Code 5 小时限流或 Codex HTTP 429 怎么办？</summary>
+            <p style="margin-top:8px;color:var(--text-secondary);font-size:14px">开启顶栏「自动换号」后，主号使用率超 92% 或触发 429 时会自动切入冷却，并立即接力至池内余量最健康的备用号或直连 API 兜底节点，在同一 Git 分支内无缝续写。详见 <a href="./guides/quota-failover-429.html" style="color:var(--accent-cyan)">《429 自动换号接力方案》</a>。</p>
+          </details>
+          <details style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:12px;padding:14px 18px">
+            <summary style="font-weight:700;cursor:pointer" data-zh="如何让 Claude Code / Codex 24 小时不关机远端无人值守运行？" data-en="How can I keep long-horizon agents &amp; Xcode builds running 24/7?">如何让 Claude Code / Codex 24 小时不关机远端无人值守运行？</summary>
+            <p style="margin-top:8px;color:var(--text-secondary);font-size:14px">推荐采用「本地 Windows Hyperion 日常总控 + 远端独享物理 Mac mini (M4) 7×24h 常驻」架构，彻底避免本地电脑合盖休眠与网络闪断。详见 <a href="./guides/remote-mac-agent-24x7.html" style="color:var(--accent-cyan)">《7×24h 远端物理 Mac mini 挂机指南》</a>。</p>
+          </details>
+        </div>
+      </div>
     </section>
   </main>
+
+  <a class="advisor-fab" href="#advisor" data-zh="🎁 领防限流手册 / 联系作者" data-en="🎁 Free Playbook / Contact">🎁 领防限流手册 / 联系作者</a>
 
   <footer>
     <div class="container foot-inner">
@@ -858,11 +930,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Accept-Release.ps1
         <strong>Hyperion</strong> · MIT License · Independent Open-Source Project (Not affiliated with OpenAI, Anthropic, or Google).
       </div>
       <div class="foot-links">
+        <a href="./en/">English</a>
+        <a href="./guides/multi-account-isolation.html">多账号防串号</a>
+        <a href="./guides/quota-failover-429.html">429 自动换号</a>
+        <a href="./guides/remote-mac-agent-24x7.html">7×24h 云端 Mac</a>
         <a href="https://github.com/ThalesNotTychus/Hyperion" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/ThalesNotTychus/Hyperion/discussions" target="_blank" rel="noopener">Discussions</a>
         <a href="https://github.com/ThalesNotTychus/Hyperion/releases" target="_blank" rel="noopener">Releases</a>
-        <a href="https://github.com/ThalesNotTychus/Hyperion/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a>
-        <a href="https://github.com/ThalesNotTychus/Hyperion/issues" target="_blank" rel="noopener">Issues</a>
       </div>
     </div>
   </footer>
@@ -952,7 +1025,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Accept-Release.ps1
       fetch("https://api.github.com/repos/ThalesNotTychus/Hyperion")
         .then((r) => r.ok ? r.json() : null)
         .then((d) => {
-          if (d && typeof d.stargazers_count === "number" && d.stargazers_count > 0) {
+          if (d && typeof d.stargazers_count === "number" && d.stargazers_count >= 50) {
             document.getElementById("star-count").textContent = "★ " + d.stargazers_count;
           }
         })

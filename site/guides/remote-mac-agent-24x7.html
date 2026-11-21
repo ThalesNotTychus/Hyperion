@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Code / Codex 7×24h 通宵无人值守挂机方案：Windows 总控 + 远端物理 Mac mini (M4) 实战 | Hyperion</title>
+  <meta name="description" content="跑通宵长程 Agent 任务（/goal、定时自动化、MCP 服务）或跨端编译 iOS Xcode 项目怕本地电脑休眠断网？详解 Windows 本地开发机搭配远端独享物理 Apple Silicon Mac mini (M4) 的 7×24h 常驻工作流。" />
+  <meta name="keywords" content="Claude Code 挂机,云端 Mac mini,远程 Mac 开发,Mac mini M4 租用,Claude Code 24小时运行,Windows 远程连接 Mac 编译 iOS,无人值守 AI 编程" />
+  <link rel="canonical" href="https://thalesnottychus.github.io/Hyperion/guides/remote-mac-agent-24x7.html" />
+  <meta property="og:title" content="Claude Code / Codex 7×24h 通宵无人值守挂机与远端物理 Mac mini (M4) 实战" />
+  <meta property="og:description" content="告别笔记本合盖断连与网络波动：独立物理 Apple Silicon 主机 24 小时常驻运行长程 Agent 与 Xcode 构建。" />
+  <meta property="og:image" content="https://thalesnottychus.github.io/Hyperion/images/arena-aurora.png" />
+  <link rel="icon" type="image/png" href="../images/logo.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Claude Code / Codex 7×24h 通宵无人值守挂机方案：Windows 总控 + 远端物理 Mac mini (M4) 实战",
+    "description": "详解利用独立物理 Mac mini (M4) 实现 7×24h 不间断运行 Claude Code、MCP 服务与 iOS/macOS 构建的完整架构。",
+    "author": { "@type": "Person", "name": "ThalesNotTychus" },
+    "datePublished": "2026-11-21",
+    "dateModified": "2026-11-21",
+    "mainEntityOfPage": "https://thalesnottychus.github.io/Hyperion/guides/remote-mac-agent-24x7.html"
+  }
+  </script>
+  <style>
+    :root { --bg:#060913; --card:#0d1426; --border:rgba(148,163,184,0.14); --text:#f8fafc; --sub:#cbd5e1; --muted:#94a3b8; --cyan:#38bdf8; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei UI",sans-serif; line-height:1.75; }
+    a { color:var(--cyan); text-decoration:none; }
+    .nav { border-bottom:1px solid var(--border); background:rgba(6,9,19,0.88); position:sticky; top:0; backdrop-filter:blur(14px); z-index:20; }
+    .nav-in { max-width:920px; margin:0 auto; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; }
+    .brand { display:flex; align-items:center; gap:10px; color:#fff; font-weight:700; font-size:17px; }
+    .brand img { width:28px; height:28px; border-radius:7px; }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 15px; border-radius:9px; font-weight:600; font-size:13.5px; color:#fff; background:linear-gradient(135deg,#0ea5e9,#6366f1); }
+    main { max-width:860px; margin:0 auto; padding:44px 24px 80px; }
+    .crumb { font-size:13px; color:var(--muted); margin-bottom:16px; }
+    h1 { font-size:30px; line-height:1.3; margin-bottom:14px; letter-spacing:-0.02em; }
+    .meta { font-size:13px; color:var(--muted); margin-bottom:28px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+    h2 { font-size:21px; margin:34px 0 12px; color:#fff; }
+    p { color:var(--sub); margin-bottom:14px; font-size:15.5px; }
+    ul, ol { margin:8px 0 18px 22px; color:var(--sub); font-size:15px; }
+    li { margin-bottom:8px; }
+    code { background:rgba(56,189,248,0.1); color:#7dd3fc; padding:2px 6px; border-radius:5px; font-family:"Cascadia Code",Consolas,monospace; font-size:13.5px; }
+    .shot { width:100%; border-radius:12px; border:1px solid var(--border); margin:16px 0 24px; }
+    .cta-box { margin-top:40px; background:linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14)); border:1px solid rgba(56,189,248,0.4); border-radius:16px; padding:26px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .qr { flex-shrink:0; text-align:center; background:#090e1c; padding:12px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); }
+    .qr img { width:132px; height:132px; border-radius:8px; background:#fff; display:block; margin-bottom:6px; }
+    .qr span { font-size:12px; color:#e0f2fe; font-weight:700; }
+    @media (max-width:720px) { .cta-box { flex-direction:column; text-align:center; } }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-in">
+      <a class="brand" href="../"><img src="../images/logo.png" alt="Hyperion" /><span>Hyperion 实战指南</span></a>
+      <a class="btn" href="https://github.com/ThalesNotTychus/Hyperion/releases/latest">⬇ 免费下载 Hyperion 便携版</a>
+    </div>
+  </header>
+  <main>
+    <div class="crumb"><a href="../">首页</a> / 7×24h 远端物理 Mac mini 常驻方案</div>
+    <h1>Claude Code / Codex 7×24h 通宵无人值守挂机方案：Windows 总控 + 远端独享物理 Mac mini (M4) 实战</h1>
+    <div class="meta">更新日期：2026-11-21 · 适用人群：独立开发者 / 跨境团队 / 全天候自动化 Agent 玩家</div>
+
+    <p>随着 Claude Code（含 <code>/goal</code> 长程自治、定时任务、Cowork 与 MCP 生态）以及 OpenAI Codex 推理能力的跃升，越来越多高频开发者开始采用<strong>「白天在 Windows 主力机拆解架构 + 夜间派发长程任务通宵跑完测试与 PR」</strong>的工作流。但纯靠本地电脑跑长任务往往会遇到三大瓶颈：</p>
+    <ul>
+      <li><strong>休眠与断网中断</strong>：笔记本合盖、系统更新重启或家庭网络抖动，会导致跑了 2 小时的 Agent 进程半途中断。</li>
+      <li><strong>环境稳定性与跨端限制</strong>：部分 CLI 原生工具链在 Unix 终端下兼容性更佳，且涉及 iOS / macOS / Swift / React Native 构建时必须依赖真实 Apple Silicon Xcode 环境。</li>
+      <li><strong>虚拟机卡顿与特征异常</strong>：普通廉价云虚拟化容器无真实 GPU 加速且共享宿主环境，而<strong>独享物理 Mac mini (M4)</strong> 具备完整原生硬件性能与纯净固定运行环境。</li>
+    </ul>
+
+    <img class="shot" src="../images/arena-aurora.png" alt="Hyperion 多智能体并行编码与自动化验收工作流" />
+
+    <h2>二、推荐架构：本地 Windows Hyperion 总控 + 远端物理 Mac mini 常驻</h2>
+    <ol>
+      <li><strong>Windows 本地日常高频编码</strong>：使用 <a href="../"><strong>Hyperion</strong></a> 管理本地多账号池、实时查看 5h/7d 电量并在多个 Git Worktree 分支并行推进日常功能开发。</li>
+      <li><strong>远端独享物理 Mac mini (M4) 7×24h 守护</strong>：通过 SSH + <code>tmux</code> 或超低延迟远程桌面（RustDesk / Parsec / 屏幕共享）连入远端物理 Mac mini，将耗时数小时的大型全库重构、自动化回归流水线、常驻机器人及 Xcode 打包任务托管在永不关机的物理节点上。</li>
+      <li><strong>Git 分支无缝协同</strong>：远端 Agent 在独立分支完成代码修改并通过单测后自动推送 PR，白天回到本地打开 Hyperion 即可直接拉取并排 Split Diff 审查合入。</li>
+    </ol>
+
+    <div class="cta-box">
+      <div>
+        <h2 style="margin-top:0">🖥️ 咨询独享物理 Mac mini (M4) 远端环境与自动化配置包</h2>
+        <p style="margin-bottom:14px">需要稳定低延迟的独享物理 Mac mini (M4) 远端开发节点，或想获取现成的 <code>tmux + Claude Code + MCP</code> 7×24h 守护配置脚本？微信扫描右侧二维码联系作者 Thales（系统自动秒通过）了解详情。</p>
+        <p style="margin-bottom:0;font-size:14px">延伸阅读：<a href="./multi-account-isolation.html">← Windows 多账号物理防串号指南</a> ｜ <a href="./quota-failover-429.html">← 5 小时 429 限流自动换号接力</a></p>
+      </div>
+      <div class="qr">
+        <img src="../images/wecom-qr.png" alt="微信扫码联系作者咨询远端物理 Mac mini 方案" />
+        <span>微信扫码 · 秒过咨询方案</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
