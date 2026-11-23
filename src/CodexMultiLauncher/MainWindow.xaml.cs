@@ -1242,13 +1242,9 @@ public partial class MainWindow : Window
             }
 
             var existing = monitor.Instances.FirstOrDefault(i => i.ProfileId == workspace.Id && !i.IsStopped);
-            if (!stealth && workspace.Client == ClientKind.Antigravity)
+            if (!stealth && workspace.Client == ClientKind.Antigravity && workspace.Kind == CodexWorkspaceKind.Managed && existing is null)
             {
-                var otherRunningAgy = monitor.Instances.Where(i => i.ProfileId != workspace.Id && !i.IsStopped).ToArray();
-                if (otherRunningAgy.Length > 0)
-                {
-                    PushToast("warning", "⚠️ 反重力防串号提醒：官方桌面端使用系统级 wincred 共享 OAuth 凭据。切换 Google 账号前建议先关闭另一个反重力实例，或直接改用指挥舱「免下载 Gemini 直连 API / Gemini CLI」实现 100% 物理防串号！");
-                }
+                PushToast("info", $"🛡 已为“{workspace.DisplayName}”挂载独立文件级凭据沙箱（.gemini/antigravity），在此窗口登录或切换 Google 账号不会影响原始反重力或其他分身。");
             }
             if (existing is not null)
             {
@@ -1306,8 +1302,9 @@ public partial class MainWindow : Window
         if (paths.AntigravityHome is not null)
         {
             AntigravityInstallation.RequireIsolationSupport(executable);
-            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".gemini"));
+            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".gemini", "antigravity"));
             Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, "AppData", "Roaming"));
+            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, "AppData", "Local"));
             Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".config"));
         }
         Directory.CreateDirectory(paths.ElectronUserData);
@@ -1889,7 +1886,7 @@ public partial class MainWindow : Window
                 var cmdInvoke = !string.IsNullOrWhiteSpace(resolvedBin) ? $"& \"{resolvedBin}\"" : preset.BinaryName;
                 initialInput = preset.Id switch
                 {
-                    "antigravity-cli" => $"{cmdInvoke} acp --login",
+                    "antigravity-cli" => $"{cmdInvoke} acp --gemini-dir \"{Path.Combine(resolvedHome, ".gemini")}\" --app-data-dir antigravity --login",
                     "claude-code" => $"{cmdInvoke} auth login",
                     "codex-cli" => $"{cmdInvoke} login",
                     "opencode" => $"{cmdInvoke} auth login",
@@ -1900,9 +1897,13 @@ public partial class MainWindow : Window
         else if (ws is { Client: ClientKind.Antigravity } && string.Equals(commandKind, "cli-login", StringComparison.OrdinalIgnoreCase))
         {
             actualKind = "shell";
-            extraEnv = AntigravityAgentRunner.CreateEnvironmentForHome(AntigravityAgentRunner.GetHomeForWorkspace(ws));
+            var agyHome = AntigravityAgentRunner.GetHomeForWorkspace(ws);
+            extraEnv = AntigravityAgentRunner.CreateEnvironmentForHome(agyHome);
             var agyBin = AntigravityAgentRunner.TryFindAgyCliExecutable();
-            initialInput = !string.IsNullOrWhiteSpace(agyBin) ? $"& \"{agyBin}\" acp --login" : "agy acp --login";
+            var loginFlags = ws.Kind == CodexWorkspaceKind.Managed
+                ? $"acp --gemini-dir \"{Path.Combine(agyHome, ".gemini")}\" --app-data-dir antigravity --login"
+                : "acp --login";
+            initialInput = !string.IsNullOrWhiteSpace(agyBin) ? $"& \"{agyBin}\" {loginFlags}" : $"agy {loginFlags}";
         }
         var info = _terminals.CreateSession(title, ws, cwd, actualKind, cols, rows, extraEnv, initialInput);
         BroadcastFullState();

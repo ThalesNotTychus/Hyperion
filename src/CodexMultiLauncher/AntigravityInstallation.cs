@@ -109,15 +109,21 @@ public static class AntigravityInstallation
         ValidateManagedPaths(paths);
         var home = Path.GetFullPath(paths.AntigravityHome);
         var appDataRoaming = Path.Combine(home, "AppData", "Roaming");
+        var appDataLocal = Path.Combine(home, "AppData", "Local");
         var xdgConfig = Path.Combine(home, ".config");
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["USERPROFILE"] = home,
             ["HOME"] = home,
             ["APPDATA"] = appDataRoaming,
+            ["LOCALAPPDATA"] = appDataLocal,
             ["XDG_CONFIG_HOME"] = xdgConfig,
             ["ANTIGRAVITY_GEMINI_DIR"] = Path.Combine(home, ".gemini"),
+            ["ANTIGRAVITY_APP_DATA_DIR"] = "antigravity",
             ["ANTIGRAVITY_CREDENTIAL_SCOPE"] = "codexmultilauncher-" + Path.GetFileName(Path.GetDirectoryName(home)),
+            // Forces `composite_token_storage` in both `language_server.exe` and `agy.exe` to store OAuth tokens
+            // in isolated per-profile files under `.gemini` instead of overwriting the global Windows `wincred` slot.
+            ["WSL_INTEROP"] = "1",
         };
     }
 
@@ -133,6 +139,7 @@ public static class AntigravityInstallation
         start.ArgumentList.Add("--user-data-dir=" + Path.GetFullPath(paths.ElectronUserData));
         start.Environment.Remove("ELECTRON_RUN_AS_NODE");
         start.Environment.Remove("ELECTRON_OZONE_PLATFORM_HINT");
+        start.Environment.Remove("WSL_INTEROP");
         foreach (var (key, value) in environment) start.Environment[key] = value;
         return start;
     }
@@ -146,8 +153,9 @@ public static class AntigravityInstallation
         if (paths.AntigravityHome is not null)
         {
             RequireIsolationSupport(executable);
-            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".gemini"));
+            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".gemini", "antigravity"));
             Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, "AppData", "Roaming"));
+            Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, "AppData", "Local"));
             Directory.CreateDirectory(Path.Combine(paths.AntigravityHome, ".config"));
         }
         Directory.CreateDirectory(paths.ElectronUserData);

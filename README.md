@@ -8,7 +8,7 @@
     <a href="https://thalesnottychus.github.io/Hyperion/"><img src="https://img.shields.io/badge/%F0%9F%8C%90_Official_Website-Live_Portal-6366F1?style=for-the-badge" alt="Official Website" /></a>
     <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/%F0%9F%87%A8%F0%9F%87%B3_%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E7%82%B9%E5%87%BB%E5%88%87%E6%8D%A2%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-0EA5E9?style=for-the-badge" alt="简体中文文档" /></a>
     <a href="https://github.com/ThalesNotTychus/Hyperion/discussions"><img src="https://img.shields.io/badge/%F0%9F%92%AC_Community-Guides_%26_Discussions-F59E0B?style=for-the-badge" alt="Community & Guides" /></a>
-    <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_v0.0.3-Portable_Win_x64-10B981?style=for-the-badge" alt="Download Portable Release" /></a>
+    <a href="https://github.com/ThalesNotTychus/Hyperion/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_v0.0.4-Portable_Win_x64-10B981?style=for-the-badge" alt="Download Portable Release" /></a>
   </p>
 
   <p>

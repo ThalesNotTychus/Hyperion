@@ -850,6 +850,7 @@ public sealed class AgentProviderStore
             {
                 var geminiDir = Path.Combine(home, ".gemini");
                 Directory.CreateDirectory(geminiDir);
+                Directory.CreateDirectory(Path.Combine(geminiDir, "antigravity"));
                 env["ANTIGRAVITY_GEMINI_DIR"] = geminiDir;
                 env["GEMINI_CLI_HOME"] = home;
                 env["GEMINI_FORCE_FILE_STORAGE"] = "true";
@@ -858,14 +859,20 @@ public sealed class AgentProviderStore
                 if (PathIdentity.Equals(home, defaultUserHome))
                 {
                     env.Remove("ANTIGRAVITY_CREDENTIAL_SCOPE");
+                    env.Remove("WSL_INTEROP");
                 }
                 else
                 {
+                    var localAppData = Path.Combine(home, "AppData", "Local");
+                    Directory.CreateDirectory(localAppData);
                     var parentDirName = Path.GetFileName(Path.GetDirectoryName(home) ?? string.Empty);
                     var scopeSuffix = !string.IsNullOrWhiteSpace(parentDirName) && home.EndsWith("antigravity-home", StringComparison.OrdinalIgnoreCase)
                         ? parentDirName
                         : "cli-" + record.Id;
+                    env["LOCALAPPDATA"] = localAppData;
+                    env["ANTIGRAVITY_APP_DATA_DIR"] = "antigravity";
                     env["ANTIGRAVITY_CREDENTIAL_SCOPE"] = "codexmultilauncher-" + scopeSuffix;
+                    env["WSL_INTEROP"] = "1";
                 }
             }
 

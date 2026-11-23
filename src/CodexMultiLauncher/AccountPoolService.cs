@@ -213,7 +213,8 @@ public sealed partial class AccountPoolService : IDisposable
                 finally { onEachUpdated?.Invoke(); }
             });
 
-        // 3. Refresh official Antigravity CLI quota (`agy -p /usage --output-format json`) when standalone `agy` CLI is installed
+        // 3. Verify Antigravity auth via non-interactive ACP `session/new` first (never popping open browser OAuth),
+        //    then read official CLI quota (`agy -p /usage --output-format json`) only for confirmed authenticated homes.
         IEnumerable<Task> agyTasks = [];
         if (AntigravityAgentRunner.TryFindAgyCliExecutable() is not null)
         {
@@ -221,7 +222,7 @@ public sealed partial class AccountPoolService : IDisposable
                 .Where(item =>
                 {
                     if (item.Client == ClientKind.Antigravity && item.IsLaunchable)
-                        return AntigravityAgentRunner.InspectHome(AntigravityAgentRunner.GetHomeForWorkspace(item)).HasAuthState;
+                        return true;
                     if (item.Client == ClientKind.MarketCli)
                     {
                         var rec = _agentProviders?.FindById(item.ProviderId ?? item.Id);
@@ -237,6 +238,13 @@ public sealed partial class AccountPoolService : IDisposable
                         var home = workspace.Client == ClientKind.Antigravity
                             ? AntigravityAgentRunner.GetHomeForWorkspace(workspace)
                             : (workspace.AntigravityHome ?? workspace.ElectronUserData);
+                        var authed = await AntigravityAgentRunner.VerifyHomeAuthAsync(home, token).ConfigureAwait(false);
+                        if (!authed)
+                        {
+                            _antigravityUsage.TryRemove(workspace.Id, out _);
+                            return;
+                        }
+
                         var snap = await AntigravityAgentRunner.ReadCliUsageAsync(home, token).ConfigureAwait(false);
                         if (snap is not null)
                             RecordAntigravityUsage(workspace.Id, snap);
@@ -468,6 +476,7 @@ public sealed partial class AccountPoolService : IDisposable
         var inspection = AntigravityAgentRunner.InspectHome(AntigravityAgentRunner.GetHomeForWorkspace(workspace));
         var inCooldown = _cooldownUntilUtc.TryGetValue(workspace.Id, out var until) && until > now;
         _antigravityUsage.TryGetValue(workspace.Id, out var agyUsage);
+        var isAuthenticated = inspection.IsAuthenticated || agyUsage is not null;
 
         decimal? pUsed = agyUsage?.PrimaryUsedPercent is { } pu ? Math.Clamp(pu, 0m, 100m) : null;
         decimal? pRem = pUsed is not null ? Math.Clamp(100m - pUsed.Value, 0m, 100m) : null;
@@ -476,7 +485,7 @@ public sealed partial class AccountPoolService : IDisposable
         var pCountdown = FormatResetCountdown(agyUsage?.PrimaryResetsAt, now);
         var sCountdown = FormatResetCountdown(agyUsage?.SecondaryResetsAt, now);
 
-        var health = !inspection.IsAuthenticated
+        var health = !isAuthenticated
             ? AccountQuotaHealth.Unauthenticated
             : inCooldown || (pUsed is not null && pUsed >= thresholdPercent) || (sUsed is not null && sUsed >= thresholdPercent)
                 ? AccountQuotaHealth.Exhausted
@@ -486,15 +495,17 @@ public sealed partial class AccountPoolService : IDisposable
 
         var status = activeTasks > 0
             ? $"⚡ 正在执行 ACP 任务 ({activeTasks})"
-            : !inspection.HasAgyCli
+            : !inspection.HasAgyCli && agyUsage is null
                 ? "待安装官方 `agy` CLI · 按订阅周期限额"
-                : !inspection.IsAuthenticated
-                    ? "待登录 · 请在终端执行 `agy acp --login` 授权"
+                : !isAuthenticated
+                    ? (workspace.Kind == CodexWorkspaceKind.Managed
+                        ? "待独立登录 · 点击「🔑 登录」授权此号（文件级独立凭据，不顶原号）"
+                        : "待登录 · 点击「🔑 登录」或在终端执行 `agy acp --login` 授权")
                     : inCooldown
                         ? $"限流冷却 · {FormatCountdown(until - now)}后恢复"
                         : pRem is not null
-                            ? $"官方 `agy` 额度 {pRem:0}%"
-                            : "官方 `agy acp` 就绪 · 按订阅周期限额";
+                            ? $"官方 `agy` 5h 余量 {pRem:0}%" + (sRem is not null ? $" · 周余量 {sRem:0}%" : string.Empty)
+                            : "官方 `agy acp` 就绪 · 独立凭据隔离";
 
         return new AccountPoolEntry(
             workspace.Id,
@@ -502,7 +513,7 @@ public sealed partial class AccountPoolService : IDisposable
             ClientKind.Antigravity,
             workspace.Kind,
             health,
-            inspection.IsAuthenticated && !inCooldown,
+            isAuthenticated && !inCooldown,
             "Antigravity ACP",
             agyUsage?.Account,
             agyUsage?.Plan ?? "AGY ACP",
@@ -626,8 +637,9 @@ public sealed partial class AccountPoolService : IDisposable
         if (isAntigravityBacked)
         {
             agyInspection = AntigravityAgentRunner.InspectHome(homeDir);
-            hasBinary = !string.IsNullOrWhiteSpace(rec?.CustomCliExecutable) ? hasBinary : agyInspection.HasAgyCli;
-            hasCliAuth = hasBinary && agyInspection.HasAuthState;
+            var hasCustomExe = !string.IsNullOrWhiteSpace(rec?.CustomCliExecutable);
+            hasBinary = hasCustomExe ? hasBinary : agyInspection.HasAgyCli;
+            hasCliAuth = hasBinary && (hasCustomExe || agyInspection.HasAuthState);
         }
         else if (preset.Id == "gemini-cli" && string.IsNullOrWhiteSpace(rec?.EncryptedApiKey))
         {
@@ -648,6 +660,8 @@ public sealed partial class AccountPoolService : IDisposable
 
         if (isAntigravityBacked && _antigravityUsage.TryGetValue(workspace.Id, out var agyUsage))
         {
+            hasBinary = true;
+            hasCliAuth = true;
             if (!string.IsNullOrWhiteSpace(agyUsage.Account))
                 accountEmail = agyUsage.Account;
             if (!string.IsNullOrWhiteSpace(agyUsage.Plan))

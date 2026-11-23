@@ -35,10 +35,13 @@ internal static class AntigravitySupportTests
             Check(original.Kind == CodexWorkspaceKind.Original && original.IsLaunchable && AntigravityInstallation.CreateEnvironment(original.DataPaths).Count == 0, "Original Antigravity must inherit the user's existing environment.");
             var parentHome = Environment.GetEnvironmentVariable("USERPROFILE");
             var environment = PackageEnvironmentBlock.CreateValues(first.DataPaths);
-            Check(environment.Count == 6 && environment["USERPROFILE"] == paths.AntigravityHome && environment["HOME"] == paths.AntigravityHome
+            Check(environment.Count == 9 && environment["USERPROFILE"] == paths.AntigravityHome && environment["HOME"] == paths.AntigravityHome
                 && environment["APPDATA"] == Path.Combine(paths.AntigravityHome, "AppData", "Roaming")
+                && environment["LOCALAPPDATA"] == Path.Combine(paths.AntigravityHome, "AppData", "Local")
                 && environment["XDG_CONFIG_HOME"] == Path.Combine(paths.AntigravityHome, ".config")
-                && environment["ANTIGRAVITY_GEMINI_DIR"] == Path.Combine(paths.AntigravityHome, ".gemini"), "UI, AppData, and backend homes must belong to the same account.");
+                && environment["ANTIGRAVITY_GEMINI_DIR"] == Path.Combine(paths.AntigravityHome, ".gemini")
+                && environment["ANTIGRAVITY_APP_DATA_DIR"] == "antigravity"
+                && environment["WSL_INTEROP"] == "1", "UI, AppData, backend homes, relative app_data_dir, and file-token storage switch must belong to the same isolated account.");
             var secondEnvironment = PackageEnvironmentBlock.CreateValues(second.DataPaths);
             Check(environment["ANTIGRAVITY_CREDENTIAL_SCOPE"] != secondEnvironment["ANTIGRAVITY_CREDENTIAL_SCOPE"]
                 && environment["APPDATA"] != secondEnvironment["APPDATA"], "Two profiles must never share their native credential scope or AppData secret overflow directory.");

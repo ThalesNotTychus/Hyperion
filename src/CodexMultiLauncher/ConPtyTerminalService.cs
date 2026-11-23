@@ -178,16 +178,27 @@ public sealed class ConPtyTerminalService : IDisposable
                 env[k] = v;
         }
 
-        // Preserve host global npm bin directory on PATH even when APPDATA is isolated per account
+        // Preserve host global npm & agy bin directories on PATH even when APPDATA / LOCALAPPDATA are isolated per account
         var envLocal = Environment.GetEnvironmentVariable("LOCALAPPDATA");
-        if (!string.IsNullOrWhiteSpace(envLocal) && Directory.GetParent(envLocal) is { } appDataRoot)
+        if (!string.IsNullOrWhiteSpace(envLocal))
         {
-            var hostNpmBin = Path.Combine(appDataRoot.FullName, "Roaming", "npm");
-            if (Directory.Exists(hostNpmBin))
+            var hostAgyBin = Path.Combine(envLocal, "agy", "bin");
+            if (Directory.Exists(hostAgyBin))
             {
                 var currentPath = env.TryGetValue("PATH", out var pVal) ? pVal : string.Empty;
-                if (!currentPath.Contains(hostNpmBin, StringComparison.OrdinalIgnoreCase))
-                    env["PATH"] = hostNpmBin + Path.PathSeparator + currentPath;
+                if (!currentPath.Contains(hostAgyBin, StringComparison.OrdinalIgnoreCase))
+                    env["PATH"] = hostAgyBin + Path.PathSeparator + currentPath;
+            }
+
+            if (Directory.GetParent(envLocal) is { } appDataRoot)
+            {
+                var hostNpmBin = Path.Combine(appDataRoot.FullName, "Roaming", "npm");
+                if (Directory.Exists(hostNpmBin))
+                {
+                    var currentPath = env.TryGetValue("PATH", out var pVal) ? pVal : string.Empty;
+                    if (!currentPath.Contains(hostNpmBin, StringComparison.OrdinalIgnoreCase))
+                        env["PATH"] = hostNpmBin + Path.PathSeparator + currentPath;
+                }
             }
         }
 

@@ -65,7 +65,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
     }
 
     private static (string? Path, long ExpiresTick) _cachedAgyExe;
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool HasAuth, long ExpiresTick)> HomeAuthCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool HasAuth, bool VerifiedByAcp, long ExpiresTick)> HomeAuthCache = new(StringComparer.OrdinalIgnoreCase);
 
     public static void InvalidateDiscoveryCache()
     {
@@ -277,27 +277,161 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         try
         {
             var fullHome = Path.GetFullPath(homeRoot);
-            if (HomeAuthCache.TryGetValue(fullHome, out var cached) && cached.HasAuth && Environment.TickCount64 < cached.ExpiresTick && Directory.Exists(fullHome))
+            if (!Directory.Exists(fullHome))
+                return new AntigravityHomeInspection(false, hasCli);
+
+            if (HomeAuthCache.TryGetValue(fullHome, out var cached))
             {
-                return new AntigravityHomeInspection(true, hasCli);
+                if (cached.VerifiedByAcp)
+                    return new AntigravityHomeInspection(cached.HasAuth, hasCli);
+                if (Environment.TickCount64 < cached.ExpiresTick)
+                    return new AntigravityHomeInspection(cached.HasAuth, hasCli);
             }
 
-            var cliConfigDir = Path.Combine(fullHome, ".gemini", "antigravity-cli");
-            var geminiRoot = Path.Combine(fullHome, ".gemini", "antigravity");
-
-            var hasCliConfig = Directory.Exists(cliConfigDir) && Directory.EnumerateFileSystemEntries(cliConfigDir).Any();
-            var hasGeminiState = Directory.Exists(geminiRoot) && Directory.EnumerateFileSystemEntries(geminiRoot).Any();
-            var hasAuth = hasCliConfig || hasGeminiState;
-            if (hasAuth)
-                HomeAuthCache[fullHome] = (true, Environment.TickCount64 + 10_000);
-            else
-                HomeAuthCache.TryRemove(fullHome, out _);
-            return new AntigravityHomeInspection(hasAuth, hasCli);
+            var hasDiskToken = HasExplicitAuthMarkerFile(fullHome);
+            HomeAuthCache[fullHome] = (hasDiskToken, false, Environment.TickCount64 + 5_000);
+            return new AntigravityHomeInspection(hasDiskToken, hasCli);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return new AntigravityHomeInspection(false, hasCli);
         }
+    }
+
+    public static void RecordVerifiedAuthState(string? homeRoot, bool isAuthenticated)
+    {
+        if (string.IsNullOrWhiteSpace(homeRoot)) return;
+        try
+        {
+            var fullHome = Path.GetFullPath(homeRoot);
+            var ttlMs = isAuthenticated ? 60_000 : 8_000;
+            HomeAuthCache[fullHome] = (isAuthenticated, true, Environment.TickCount64 + ttlMs);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Verifies Antigravity authentication non-interactively via official ACP (`initialize` -> `session/new`).
+    /// Never triggers interactive browser OAuth popups when unauthenticated (`session/new` returns JSON-RPC `-32000 Authentication required`).
+    /// </summary>
+    public static async Task<bool> VerifyHomeAuthAsync(string? homeRoot, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(homeRoot) || TryFindAgyCliExecutable() is null)
+            return false;
+
+        string fullHome;
+        try
+        {
+            fullHome = Path.GetFullPath(homeRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+
+        if (!Directory.Exists(fullHome))
+            return false;
+
+        if (HomeAuthCache.TryGetValue(fullHome, out var cached) && cached.VerifiedByAcp && Environment.TickCount64 < cached.ExpiresTick)
+            return cached.HasAuth;
+
+        var defaultUserHome = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        if (!PathIdentity.Equals(fullHome, defaultUserHome) && !HasAntigravityDirectoryMarker(fullHome) && !HasExplicitAuthMarkerFile(fullHome))
+        {
+            RecordVerifiedAuthState(fullHome, false);
+            return false;
+        }
+
+        try
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+            budget.CancelAfter(TimeSpan.FromSeconds(7));
+            using var doc = await ProbeAcpSessionNewAsync(fullHome, fullHome, budget.Token).ConfigureAwait(false);
+            var ok = doc is not null
+                && doc.RootElement.TryGetProperty("sessionId", out var sid)
+                && sid.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(sid.GetString());
+            RecordVerifiedAuthState(fullHome, ok);
+            return ok;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            RecordVerifiedAuthState(fullHome, false);
+            return false;
+        }
+    }
+
+    public static bool HasAntigravityDirectoryMarker(string? homeRoot)
+    {
+        if (string.IsNullOrWhiteSpace(homeRoot)) return false;
+        try
+        {
+            var fullHome = Path.GetFullPath(homeRoot);
+            var cliConfigDir = Path.Combine(fullHome, ".gemini", "antigravity-cli");
+            var geminiRoot = Path.Combine(fullHome, ".gemini", "antigravity");
+            return (Directory.Exists(cliConfigDir) && Directory.EnumerateFileSystemEntries(cliConfigDir).Any())
+                || (Directory.Exists(geminiRoot) && Directory.EnumerateFileSystemEntries(geminiRoot).Any());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasExplicitAuthMarkerFile(string fullHome)
+    {
+        var geminiDir = Path.Combine(fullHome, ".gemini");
+        if (!Directory.Exists(geminiDir)) return false;
+
+        foreach (var sub in new[]
+        {
+            geminiDir,
+            Path.Combine(geminiDir, "antigravity"),
+            Path.Combine(geminiDir, "antigravity-cli"),
+            Path.Combine(geminiDir, "config"),
+        })
+        {
+            if (!Directory.Exists(sub)) continue;
+            foreach (var file in Directory.EnumerateFiles(sub))
+            {
+                var name = Path.GetFileName(file);
+                if (string.IsNullOrEmpty(name)) continue;
+                if (name.Equals("mcp_oauth_tokens.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("mcp_config.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("config.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("onboarding.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("installation_id", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("antigravity_state.pbtxt", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("jetski_state.pbtxt", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("cli.log", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("usage-probe.log", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("last_check.timestamp", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals(".migrated", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("conversation_summaries.db", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (name.Equals("state.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("oauth_creds.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("google_accounts.json", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("token", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("oauth", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("auth", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("cred", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public static bool HasStandaloneGeminiCliOauth(string? homeRoot)
@@ -324,7 +458,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         if (string.Equals(record.PresetId, "antigravity-cli", StringComparison.OrdinalIgnoreCase))
             return true;
         if (string.Equals(record.PresetId, "gemini-cli", StringComparison.OrdinalIgnoreCase))
-            return !HasStandaloneGeminiCliOauth(homeRoot) && InspectHome(homeRoot).HasAuthState;
+            return !HasStandaloneGeminiCliOauth(homeRoot) && HasAntigravityDirectoryMarker(homeRoot);
         return false;
     }
 
@@ -346,7 +480,10 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
                 ? Path.GetFullPath(homeRoot)
                 : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var env = !string.IsNullOrWhiteSpace(homeRoot) ? CreateEnvironmentForHome(homeRoot) : null;
-            psi = CreateCliArgsStartInfo(agyExe, workDir, ["-p", "/usage", "--output-format", "json"], env);
+            var logDir = Path.Combine(workDir, ".gemini", "antigravity");
+            Directory.CreateDirectory(logDir);
+            var singleLogPath = Path.Combine(logDir, "usage-probe.log");
+            psi = CreateCliArgsStartInfo(agyExe, workDir, ["-p", "/usage", "--output-format", "json", "--log-file", singleLogPath], env);
         }
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -403,10 +540,16 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         if (root.TryGetProperty("response", out var respProp) && respProp.ValueKind == JsonValueKind.String)
         {
             var respText = respProp.GetString();
-            if (!string.IsNullOrWhiteSpace(respText) && respText.Contains('{', StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(respText))
             {
-                var nested = ParseCliUsageJson(respText, now);
-                if (nested is not null) return nested;
+                if (respText.Contains('{', StringComparison.Ordinal))
+                {
+                    var nested = ParseCliUsageJson(respText, now);
+                    if (nested is not null) return nested;
+                }
+
+                var tsvSnapshot = ParseCliUsageTsvResponse(respText, TryReadString(root, "account") ?? TryReadString(root, "email"), TryReadString(root, "plan") ?? TryReadString(root, "tier"), now);
+                if (tsvSnapshot is not null) return tsvSnapshot;
             }
         }
 
@@ -516,6 +659,87 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         return new AntigravityUsageSnapshot(account, plan, primaryUsed, primaryReset, secondaryUsed, secondaryReset, now);
     }
 
+    private static AntigravityUsageSnapshot? ParseCliUsageTsvResponse(
+        string responseText,
+        string? account,
+        string? plan,
+        DateTimeOffset now)
+    {
+        // Official `agy -p /usage --output-format json` v1.5.14+ TSV format:
+        // "Gemini Models\tWeekly Limit Remaining\t8%\t2026-11-28T08:48:13Z\nGemini Models\tFive Hour Limit Remaining\t74%\t2026-11-22T18:07:56Z\n..."
+        decimal? geminiPrimaryUsed = null;
+        DateTimeOffset? geminiPrimaryReset = null;
+        decimal? geminiSecondaryUsed = null;
+        DateTimeOffset? geminiSecondaryReset = null;
+
+        decimal? fallbackPrimaryUsed = null;
+        DateTimeOffset? fallbackPrimaryReset = null;
+        decimal? fallbackSecondaryUsed = null;
+        DateTimeOffset? fallbackSecondaryReset = null;
+
+        foreach (var rawLine in responseText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var cols = rawLine.Split('\t', StringSplitOptions.TrimEntries);
+            if (cols.Length < 3) continue;
+
+            var groupName = cols[0];
+            var bucketLabel = cols[1].ToLowerInvariant();
+            var pctRaw = cols[2].TrimEnd('%').Trim();
+            if (!decimal.TryParse(pctRaw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pctVal))
+                continue;
+
+            var normPct = pctVal <= 1.0001m && !cols[2].Contains('%', StringComparison.Ordinal) ? pctVal * 100m : pctVal;
+            var isRemaining = bucketLabel.Contains("remain", StringComparison.Ordinal) || !bucketLabel.Contains("used", StringComparison.Ordinal);
+            var usedPct = Math.Clamp(isRemaining ? 100m - normPct : normPct, 0m, 100m);
+
+            DateTimeOffset? resetAt = null;
+            if (cols.Length >= 4 && !string.IsNullOrWhiteSpace(cols[3]) && DateTimeOffset.TryParse(cols[3], out var parsedReset))
+                resetAt = parsedReset;
+
+            var isWeekly = bucketLabel.Contains("week", StringComparison.Ordinal)
+                || bucketLabel.Contains("7d", StringComparison.Ordinal)
+                || bucketLabel.Contains("7-day", StringComparison.Ordinal);
+            var isGeminiGroup = groupName.Contains("Gemini", StringComparison.OrdinalIgnoreCase);
+
+            if (isGeminiGroup)
+            {
+                if (isWeekly)
+                {
+                    geminiSecondaryUsed ??= usedPct;
+                    geminiSecondaryReset ??= resetAt;
+                }
+                else
+                {
+                    geminiPrimaryUsed ??= usedPct;
+                    geminiPrimaryReset ??= resetAt;
+                }
+            }
+            else
+            {
+                if (isWeekly)
+                {
+                    fallbackSecondaryUsed ??= usedPct;
+                    fallbackSecondaryReset ??= resetAt;
+                }
+                else
+                {
+                    fallbackPrimaryUsed ??= usedPct;
+                    fallbackPrimaryReset ??= resetAt;
+                }
+            }
+        }
+
+        var finalPrimaryUsed = geminiPrimaryUsed ?? fallbackPrimaryUsed;
+        var finalPrimaryReset = geminiPrimaryUsed is not null ? geminiPrimaryReset : fallbackPrimaryReset;
+        var finalSecondaryUsed = geminiSecondaryUsed ?? fallbackSecondaryUsed;
+        var finalSecondaryReset = geminiSecondaryUsed is not null ? geminiSecondaryReset : fallbackSecondaryReset;
+
+        if (finalPrimaryUsed is null && finalSecondaryUsed is null)
+            return null;
+
+        return new AntigravityUsageSnapshot(account, plan, finalPrimaryUsed, finalPrimaryReset, finalSecondaryUsed, finalSecondaryReset, now);
+    }
+
     private static string? TryReadString(JsonElement obj, string propName) =>
         obj.TryGetProperty(propName, out var p) && p.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(p.GetString())
             ? p.GetString()!.Trim()
@@ -586,10 +810,12 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         }
 
         var appDataRoaming = Path.Combine(fullHome, "AppData", "Roaming");
+        var appDataLocal = Path.Combine(fullHome, "AppData", "Local");
         var xdgConfig = Path.Combine(fullHome, ".config");
         var geminiDir = Path.Combine(fullHome, ".gemini");
         var appDataDir = Path.Combine(geminiDir, "antigravity");
         Directory.CreateDirectory(appDataRoaming);
+        Directory.CreateDirectory(appDataLocal);
         Directory.CreateDirectory(xdgConfig);
         Directory.CreateDirectory(geminiDir);
         Directory.CreateDirectory(appDataDir);
@@ -604,17 +830,22 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
             ["USERPROFILE"] = fullHome,
             ["HOME"] = fullHome,
             ["APPDATA"] = appDataRoaming,
+            ["LOCALAPPDATA"] = appDataLocal,
             ["XDG_CONFIG_HOME"] = xdgConfig,
             ["ANTIGRAVITY_GEMINI_DIR"] = geminiDir,
-            ["ANTIGRAVITY_APP_DATA_DIR"] = appDataDir,
+            // Relative to `ANTIGRAVITY_GEMINI_DIR` (`<fullHome>\.gemini\antigravity`), matching Antigravity Desktop Hub
+            ["ANTIGRAVITY_APP_DATA_DIR"] = "antigravity",
             ["ANTIGRAVITY_CREDENTIAL_SCOPE"] = "codexmultilauncher-" + scopeSuffix,
+            // Forces `composite_token_storage` to read/write isolated file tokens in `.gemini` instead of global `wincred`
+            ["WSL_INTEROP"] = "1",
         };
     }
 
     private static void ScrubInheritedAntigravityEnv(ProcessStartInfo psi)
     {
         var staleKeys = psi.Environment.Keys
-            .Where(k => k.StartsWith("ANTIGRAVITY_", StringComparison.OrdinalIgnoreCase))
+            .Where(k => k.StartsWith("ANTIGRAVITY_", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(k, "WSL_INTEROP", StringComparison.OrdinalIgnoreCase))
             .ToArray();
         foreach (var k in staleKeys)
             psi.Environment.Remove(k);
@@ -647,6 +878,19 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         }
 
         psi.ArgumentList.Add("acp");
+        if (environmentOverrides is not null)
+        {
+            if (environmentOverrides.TryGetValue("ANTIGRAVITY_GEMINI_DIR", out var gemDir) && !string.IsNullOrWhiteSpace(gemDir))
+            {
+                psi.ArgumentList.Add("--gemini-dir");
+                psi.ArgumentList.Add(gemDir);
+            }
+            if (environmentOverrides.TryGetValue("ANTIGRAVITY_APP_DATA_DIR", out var appDir) && !string.IsNullOrWhiteSpace(appDir))
+            {
+                psi.ArgumentList.Add("--app-data-dir");
+                psi.ArgumentList.Add(appDir);
+            }
+        }
 
         ScrubInheritedAntigravityEnv(psi);
         if (environmentOverrides is not null)

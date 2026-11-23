@@ -4019,27 +4019,27 @@ function openAntigravityGuardModal() {
     en
       ? `
       <div style="font-size:12.5px;line-height:1.65;color:var(--text-secondary)">
-        <p style="margin:0 0 10px 0;color:var(--text-primary);font-weight:600">Why does signing out of one Antigravity desktop window affect another?</p>
+        <p style="margin:0 0 10px 0;color:var(--text-primary);font-weight:600">How Hyperion keeps multiple Antigravity accounts 100% isolated</p>
         <p style="margin:0 0 10px 0">
-          1. <strong>Directory Isolation Active</strong>: Each managed Antigravity profile already uses isolated <code>APPDATA</code>, <code>XDG_CONFIG_HOME</code>, <code>USERPROFILE</code>, and <code>ANTIGRAVITY_GEMINI_DIR</code> in headless mode.<br/>
-          2. <strong>Desktop Credential Limitation</strong>: Official Antigravity desktop apps store OAuth tokens in Windows Credential Manager (<code>wincred</code>) under a shared OS user slot.
+          1. <strong>Default Official Account (<code>wincred</code>)</strong>: Your primary Antigravity installation keeps using your system <code>%USERPROFILE%\\.gemini</code> and Windows Credential Manager untouched.<br/>
+          2. <strong>Managed Profiles (File-Based Token Sandbox)</strong>: Every managed Antigravity profile mounts an isolated <code>.gemini/antigravity</code> directory with native file-based token storage enabled—signing in or out of a managed desktop window or <code>agy acp</code> session never overwrites your primary <code>wincred</code> slot!
         </p>
         <div class="guard-alert-box">
-          <strong>✅ 100% Physical Isolation Solution:</strong><br/>
-          To run <strong>multiple Google / Gemini accounts concurrently with zero token collision</strong>, connect via <strong>Direct Gemini API</strong> or <strong>Isolated Gemini CLI</strong>—each agent uses its own DPAPI-encrypted key or isolated HOME directory!
+          <strong>💡 Tip when upgrading an already-open window:</strong><br/>
+          If a managed Antigravity desktop window was already running before this update, close that window once and launch it again from Hyperion so the new file-based credential environment is applied.
         </div>
       </div>
     `
       : `
       <div style="font-size:12.5px;line-height:1.65;color:var(--text-secondary)">
-        <p style="margin:0 0 10px 0;color:var(--text-primary);font-weight:600">为什么两个反重力桌面客户端退登时会互相变账号？</p>
+        <p style="margin:0 0 10px 0;color:var(--text-primary);font-weight:600">Hyperion 如何让多个反重力桌面端与 CLI 账号彻底分开？</p>
         <p style="margin:0 0 10px 0">
-          1. <strong>已自动修复的目录隔离</strong>：本指挥舱已为每个受管反重力账号独立隔离 <code>APPDATA</code>、<code>XDG_CONFIG_HOME</code>、<code>USERPROFILE</code>、<code>ANTIGRAVITY_GEMINI_DIR</code> 并默认启用原生 <code>headless</code> 无窗守护。<br/>
-          2. <strong>官方桌面端的系统限制</strong>：Google 反重力桌面版在进行浏览器 OAuth 授权时，会将主登录态写入当前 Windows 用户的全局凭据管理器（<code>wincred</code>）并监听变更。
+          1. <strong>原始反重力（保持系统默认）</strong>：您的主账号继续使用系统默认 <code>%USERPROFILE%\\.gemini</code> 与 Windows 凭据管理器（<code>wincred</code>），零侵入原环境。<br/>
+          2. <strong>受管反重力分身（文件级独立凭据沙箱）</strong>：每个新建的受管反重力账号均独立挂载专属 <code>.gemini/antigravity</code> 目录并开启底层文件级 Token 存储，在受管桌面窗口或内置终端登录/退登新 Google 账号，绝不会覆盖或顶掉原始反重力及其他分身！
         </p>
         <div class="guard-alert-box">
-          <strong>✅ 100% 物理根治方案：</strong><br/>
-          如果您需要<strong>同时在线使用多个不同的 Google / Gemini 账号且永不串号</strong>，无需启动反重力桌面端——直接添加<strong>「Google Gemini 原生直连 API」</strong>或<strong>「独立目录 Gemini CLI」</strong>，每个账号拥有独立 DPAPI 加密密钥，彻底绕开系统共享凭据槽！
+          <strong>💡 旧窗口重启生效提示：</strong><br/>
+          如果您在升级前已经打开了某个受管反重力桌面窗口，请先关闭该窗口再从 Hyperion 重新点开一次，即可注入全新文件级隔离环境。
         </div>
       </div>
     `,

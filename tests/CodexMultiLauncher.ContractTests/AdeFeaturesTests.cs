@@ -780,6 +780,31 @@ internal static class AdeFeaturesTests
         Check(migEntryAfterUsage.PrimaryRemainingPercent == 72m && migEntryAfterUsage.SecondaryRemainingPercent == 60m && migEntryAfterUsage.CreditsUnlimited == false,
             "AccountPoolService must reflect official `agy /usage` 5h and 7d remaining quota percentages accurately.");
 
+        // Verify `agy -p /usage --output-format json` v1.5.14+ TSV `response` format AND skeleton-file false-positive prevention
+        var parsedTsvUsage = AntigravityAgentRunner.ParseCliUsageJson("""
+            {
+              "conversation_id": "",
+              "status": "SUCCESS",
+              "response": "Gemini Models\tWeekly Limit Remaining\t8%\t2026-11-28T08:48:13Z\nGemini Models\tFive Hour Limit Remaining\t74%\t2026-11-22T18:07:56Z\nClaude & GPT Models\tWeekly Limit Remaining\t100%\t2026-11-28T08:48:13Z\n"
+            }
+            """, DateTimeOffset.UtcNow);
+        Check(parsedTsvUsage is not null && parsedTsvUsage.PrimaryUsedPercent == 26m && parsedTsvUsage.SecondaryUsedPercent == 92m
+            && parsedTsvUsage.PrimaryResetsAt is not null && parsedTsvUsage.SecondaryResetsAt is not null,
+            "TSV `response` format from `agy -p /usage --output-format json` must extract 5h (26% used / 74% left) and weekly (92% used / 8% left) Gemini buckets.");
+
+        var unloggedHome = Path.Combine(subRoot, "unlogged-agy-skeleton");
+        Directory.CreateDirectory(Path.Combine(unloggedHome, ".gemini", "antigravity"));
+        Directory.CreateDirectory(Path.Combine(unloggedHome, ".gemini", "antigravity-cli"));
+        File.WriteAllText(Path.Combine(unloggedHome, ".gemini", "antigravity", "installation_id"), Guid.NewGuid().ToString());
+        File.WriteAllText(Path.Combine(unloggedHome, ".gemini", "antigravity", "antigravity_state.pbtxt"), "");
+        File.WriteAllText(Path.Combine(unloggedHome, ".gemini", "antigravity-cli", "jetski_state.pbtxt"), "");
+        AntigravityAgentRunner.InvalidateDiscoveryCache();
+        Check(!AntigravityAgentRunner.InspectHome(unloggedHome).HasAuthState,
+            "Auto-generated `installation_id` / `*.pbtxt` skeleton files must NEVER falsely mark an unlogged-in isolated Antigravity home as authenticated.");
+        var isolatedEnv = AntigravityAgentRunner.CreateEnvironmentForHome(unloggedHome);
+        Check(isolatedEnv["ANTIGRAVITY_APP_DATA_DIR"] == "antigravity" && isolatedEnv["WSL_INTEROP"] == "1",
+            "Isolated Antigravity home environment must use relative `antigravity` app_data_dir and enable file-based token storage.");
+
         // Verify full stdio ACP JSON-RPC 2.0 lifecycle (`initialize` -> `session/new` -> `session/set_config_option` -> `session/prompt` -> `session/update` + `session/request_permission` + `fs/write_text_file`)
         var selfDll = typeof(AdeFeaturesTests).Assembly.Location;
         var acpWorkDir = Path.Combine(subRoot, "acp-workspace");
