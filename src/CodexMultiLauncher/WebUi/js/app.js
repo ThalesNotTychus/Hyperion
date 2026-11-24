@@ -1140,6 +1140,13 @@ function openCommandPalette() {
       { label: en ? "Open Git Diff & Live Trace Drawer" : "打开右侧 Git Diff 与实时轨迹面板", sub: "IDE", run: () => { switchView("command"); state.diffOpen = true; renderRoomHeader(); renderDiffDrawer(); } },
       { label: en ? "Toggle Sidebar (Ctrl+B)" : "折叠 / 展开左侧项目树 (Ctrl+B)", sub: "Layout", run: () => toggleSidebarCollapse() },
       { label: en ? "Refresh All Quotas & Processes" : "立即刷新全平台配额与守护进程", sub: "Pool", run: () => document.getElementById("btn-rail-refresh")?.click() },
+      ...((state.data?.workspaces || [])
+        .filter((w) => w.hasDesktopClient !== false && w.isLaunchable !== false && w.kind !== "ExternalUnresolved")
+        .map((w) => ({
+          label: en ? `Launch Desktop App: ${w.displayName}` : `启动桌面客户端：${w.displayName}`,
+          sub: w.client,
+          run: () => rpc("client.launch", { workspaceId: w.id, stealth: false }).catch((err) => showToast("error", err.message)),
+        }))),
       ...THEMES.map((t) => ({
         label: en ? `Theme: ${t.id[0].toUpperCase() + t.id.slice(1)}` : `切换主题：${t.label}`,
         sub: "Theme",
@@ -1231,12 +1238,13 @@ function openTopbarPoolPopover(anchorEl) {
   state.topbarPoolOpen = true;
 
   const entries = (state.data?.pool?.entries || []).filter((e) => e.health !== "UnsupportedClient");
+  const wsMap = new Map((state.data?.workspaces || []).map((w) => [w.id, w]));
   const rect = anchorEl.getBoundingClientRect();
   const pop = document.createElement("div");
   pop.id = "topbar-pool-popover";
   pop.className = "roster-popover";
   pop.style.top = `${rect.bottom + 6}px`;
-  pop.style.left = `${Math.max(12, Math.min(window.innerWidth - 404, rect.left))}px`;
+  pop.style.left = `${Math.max(12, Math.min(window.innerWidth - 440, rect.left))}px`;
 
   pop.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between">
@@ -1246,6 +1254,8 @@ function openTopbarPoolPopover(anchorEl) {
     <div class="roster-popover-list">
       ${entries
         .map((e) => {
+          const ws = wsMap.get(e.workspaceId);
+          const canLaunchDesktop = ws && ws.hasDesktopClient !== false && ws.isLaunchable !== false;
           const plat = formatPlatformShort(e.client);
           const rem = e.primaryRemainingPercent != null ? Math.round(e.primaryRemainingPercent) : null;
           const status =
@@ -1264,6 +1274,7 @@ function openTopbarPoolPopover(anchorEl) {
                 <span style="font-size:11px;color:var(--text-muted)">${escapeHtml(status)}</span>
               </div>
               <div style="display:flex;gap:4px">
+                ${canLaunchDesktop ? `<button class="btn btn-ghost btn-sm" data-tpp-launch="${escapeHtml(e.workspaceId)}" title="启动或前置该账号的官方桌面客户端窗口">🖥 桌面端</button>` : ""}
                 <button class="btn btn-ghost btn-sm" data-tpp-studio="${escapeHtml(e.workspaceId)}" title="在当前项目中将此账号设为默认主力智能体">💬 设为当前主力</button>
                 <button class="btn btn-ghost btn-sm" data-tpp-at="${escapeHtml(e.workspaceId)}">@ 协作</button>
               </div>
@@ -1274,10 +1285,18 @@ function openTopbarPoolPopover(anchorEl) {
   `;
 
   document.body.appendChild(pop);
+  applyLanguageToRoot(pop);
   document.getElementById("tpp-go-fleet").onclick = () => {
     closeTopbarPoolPopover();
     switchView("fleet");
   };
+  pop.querySelectorAll("[data-tpp-launch]").forEach((btn) => {
+    btn.onclick = () => {
+      const targetWsId = btn.dataset.tppLaunch;
+      closeTopbarPoolPopover();
+      rpc("client.launch", { workspaceId: targetWsId, stealth: false }).catch((err) => showToast("error", err.message));
+    };
+  });
   pop.querySelectorAll("[data-tpp-studio]").forEach((btn) => {
     btn.onclick = () => {
       closeTopbarPoolPopover();
@@ -1430,7 +1449,7 @@ function renderAccountPopoverContent() {
         ${
           ws.hasDesktopClient !== false
             ? `<button class="btn btn-sm" id="pop-stealth-start-btn">👻 后台静默守护</button>
-               <button class="btn btn-sm" id="pop-login-win-btn">${ws.isLoginWindowRevealed ? "👻 收回登录窗" : "🔑 临时弹窗登录"}</button>`
+               <button class="btn btn-sm" id="pop-login-win-btn">${ws.visibleWindowCount > 0 ? "👻 收回桌面窗" : "🖥 打开桌面客户端"}</button>`
             : `<button class="btn btn-sm" id="pop-edit-universal-btn">⚙ 编辑模型/密钥</button>
                <button class="btn btn-sm" id="pop-open-term-btn">⌨ 打开隔离终端</button>`
         }
@@ -1458,7 +1477,9 @@ function renderAccountPopoverContent() {
   if (popLogin) {
     popLogin.onclick = () =>
       runButtonAction(popLogin, { busyText: "处理中…", doneText: "✓ 完成" }, () =>
-        rpc("stealth.setLoginWindow", { workspaceId: ws.id, reveal: !ws.isLoginWindowRevealed })
+        ws.visibleWindowCount > 0
+          ? rpc("stealth.setLoginWindow", { workspaceId: ws.id, reveal: false })
+          : rpc("client.launch", { workspaceId: ws.id, stealth: false })
       );
   }
   const popEditUniv = document.getElementById("pop-edit-universal-btn");
@@ -3926,12 +3947,13 @@ function openCardContextMenu(ws, pe, univ, anchorEl) {
 
   const isDesktop = ws.hasDesktopClient !== false;
   menu.innerHTML = `
+    ${isDesktop && ws.isLaunchable !== false ? `<button class="card-menu-item" id="cm-open-desktop">🖥 启动 / 前置桌面客户端</button>` : ""}
     <button class="card-menu-item" id="cm-refresh">↻ 刷新状态与配额</button>
     ${
       isDesktop
         ? `<button class="card-menu-item" id="cm-to-clientless">🔄 转为免客户端 CLI（保留原目录）</button>
            <button class="card-menu-item" id="cm-stealth">👻 后台静默启动守护</button>
-           <button class="card-menu-item" id="cm-login">${ws.isLoginWindowRevealed || ws.visibleWindowCount > 0 ? "👻 收回登录窗口" : "🔑 临时弹窗登录授权"}</button>`
+           ${ws.visibleWindowCount > 0 ? `<button class="card-menu-item" id="cm-login">👻 收回窗口至后台</button>` : ""}`
         : `<button class="card-menu-item" id="cm-edit">⚙ 编辑模型 / 目录与密钥</button>
            <button class="card-menu-item" id="cm-term">⌨ 打开专属隔离终端</button>`
     }
@@ -3942,6 +3964,7 @@ function openCardContextMenu(ws, pe, univ, anchorEl) {
   `;
 
   document.body.appendChild(menu);
+  applyLanguageToRoot(menu);
 
   document.getElementById("cm-refresh").onclick = () => {
     closeCardContextMenu();
@@ -3964,6 +3987,13 @@ function openCardContextMenu(ws, pe, univ, anchorEl) {
   };
 
   if (isDesktop) {
+    const openDeskBtn = document.getElementById("cm-open-desktop");
+    if (openDeskBtn) {
+      openDeskBtn.onclick = () => {
+        closeCardContextMenu();
+        rpc("client.launch", { workspaceId: ws.id, stealth: false }).catch((err) => showToast("error", err.message));
+      };
+    }
     document.getElementById("cm-to-clientless").onclick = () => {
       closeCardContextMenu();
       const en = getUiLanguage() === "en";
@@ -3984,11 +4014,13 @@ function openCardContextMenu(ws, pe, univ, anchorEl) {
       closeCardContextMenu();
       rpc("client.launch", { workspaceId: ws.id, stealth: true }).catch((err) => showToast("error", err.message));
     };
-    document.getElementById("cm-login").onclick = () => {
-      closeCardContextMenu();
-      const currentlyVisible = ws.isLoginWindowRevealed || ws.visibleWindowCount > 0;
-      rpc("stealth.setLoginWindow", { workspaceId: ws.id, reveal: !currentlyVisible }).catch((err) => showToast("error", err.message));
-    };
+    const cmHide = document.getElementById("cm-login");
+    if (cmHide) {
+      cmHide.onclick = () => {
+        closeCardContextMenu();
+        rpc("stealth.setLoginWindow", { workspaceId: ws.id, reveal: false }).catch((err) => showToast("error", err.message));
+      };
+    }
     const ren = document.getElementById("cm-rename");
     if (ren) {
       ren.onclick = () => {
@@ -4267,9 +4299,14 @@ function renderFleetView() {
           secondaryBtn = `<button class="btn btn-sm" data-install-cli="antigravity-cli">⬇ 安装</button>`;
         } else if (w.client === "MarketCli" && cliBinaryReady && !pe.authReady) {
           secondaryBtn = `<button class="btn btn-ghost btn-sm" data-cli-login="${escapeHtml(w.id)}" title="在内置隔离终端一键登录授权此账号">🔑 登录</button>`;
-        } else if (w.hasDesktopClient !== false && (!pe.authReady || w.isLoginWindowRevealed || w.visibleWindowCount > 0)) {
-          const isRev = w.isLoginWindowRevealed || w.visibleWindowCount > 0;
-          secondaryBtn = `<button class="btn btn-ghost btn-sm" data-login-toggle-ws="${escapeHtml(w.id)}" data-revealed="${isRev ? "1" : "0"}">${isRev ? "👻 收回窗" : "🔑 登录"}</button>`;
+        } else if (w.hasDesktopClient !== false && w.isLaunchable !== false) {
+          if (w.visibleWindowCount > 0) {
+            secondaryBtn = `<button class="btn btn-ghost btn-sm" data-login-toggle-ws="${escapeHtml(w.id)}" data-revealed="1" title="将该桌面客户端窗口隐藏收纳至后台">👻 收回窗</button>`;
+          } else if ((w.runningCount || 0) > 0) {
+            secondaryBtn = `<button class="btn btn-ghost btn-sm" data-launch-ws="${escapeHtml(w.id)}" title="显现并前置后台运行中的桌面客户端窗口">👁 显示窗口</button>`;
+          } else {
+            secondaryBtn = `<button class="btn btn-ghost btn-sm" data-launch-ws="${escapeHtml(w.id)}" title="启动并打开该隔离账号的官方桌面客户端窗口">${!pe.authReady ? "🔑 登录启动" : "🖥 启动桌面端"}</button>`;
+          }
         }
 
         return (
@@ -4356,6 +4393,12 @@ function renderFleetView() {
         renderTerminalDock();
         await spawnTerminal("cli-login");
       });
+  });
+  grid.querySelectorAll("[data-launch-ws]").forEach((b) => {
+    b.onclick = () =>
+      runButtonAction(b, { busyText: "启动中…", doneText: "✓ 已启动" }, () =>
+        rpc("client.launch", { workspaceId: b.dataset.launchWs, stealth: false })
+      );
   });
   grid.querySelectorAll("[data-login-toggle-ws]").forEach((b) => {
     b.onclick = () => {

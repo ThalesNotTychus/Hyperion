@@ -561,7 +561,9 @@ public partial class MainWindow : Window
                     : null,
                 VisibleWindowCount = stealthState.VisibleWindowCount,
                 HiddenWindowCount = stealthState.HiddenWindowCount,
-                IsLoginWindowRevealed = _stealthWindows.IsTemporarilyRevealedForLogin(w.Id),
+                IsLoginWindowRevealed = wsInstances.Length > 0
+                    && stealthState.VisibleWindowCount > 0
+                    && _stealthWindows.IsTemporarilyRevealedForLogin(w.Id),
             };
         }).ToArray();
 
@@ -765,9 +767,14 @@ public partial class MainWindow : Window
         if (existing is not null)
         {
             _stealthWindows.RevealInstanceWindows(existing.ProcessId, workspaceId, existing.MemberProcessIds);
-            monitor.Focus(existing);
+            var focused = monitor.Focus(existing);
+            if (!focused && ws.Client == ClientKind.Antigravity)
+            {
+                await Task.Run(() => LaunchAntigravityProcess(ws.DataPaths, folderPath: null));
+                await RefreshDiscoveryFromBridgeAsync();
+            }
             BroadcastFullState();
-            PushToast("info", $"🔑 已临时显现“{ws.DisplayName}”登录窗口；登录完成后点击“收回后台”即可隐身");
+            PushToast("info", $"🖥 已显现并前置“{ws.DisplayName}”桌面客户端窗口。");
             return BuildFullStateDto();
         }
 
@@ -1258,6 +1265,12 @@ public partial class MainWindow : Window
 
                 _stealthWindows.RevealInstanceWindows(existing.ProcessId, workspace.Id, existing.MemberProcessIds);
                 var focused = monitor.Focus(existing);
+                if (!focused && workspace.Client == ClientKind.Antigravity)
+                {
+                    await Task.Run(() => LaunchAntigravityProcess(workspace.DataPaths, workingDirectory));
+                    await RefreshDiscoveryFromBridgeAsync();
+                    focused = true;
+                }
                 var focusMsg = $"👁 已显现并定位“{workspace.DisplayName}”客户端窗口。";
                 PushToast("info", focusMsg);
                 return new { launched = false, focused, pid = existing.ProcessId, message = focusMsg };
