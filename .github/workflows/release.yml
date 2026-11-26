@@ -35,7 +35,7 @@ jobs:
       - name: Build solution & contract tests
         shell: pwsh
         run: |
-          $ver = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF.Substring(11) } else { '0.0.5' }
+          $ver = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF.Substring(11) } else { '0.0.6' }
           dotnet build Hyperion.sln -c Release -v minimal --no-restore /p:Version=$ver
 
       - name: Execute contract, isolation, ConPTY & E2E simulation tests
@@ -48,7 +48,7 @@ jobs:
       - name: Publish single-file portable executable (stripped PDB)
         shell: pwsh
         run: |
-          $ver = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF.Substring(11) } else { '0.0.5' }
+          $ver = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF.Substring(11) } else { '0.0.6' }
           $outDir = "publish/Hyperion-win-x64"
           dotnet publish src/CodexMultiLauncher/CodexMultiLauncher.csproj `
             -c Release `

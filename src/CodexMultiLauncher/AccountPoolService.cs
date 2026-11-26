@@ -213,8 +213,9 @@ public sealed partial class AccountPoolService : IDisposable
                 finally { onEachUpdated?.Invoke(); }
             });
 
-        // 3. Verify Antigravity auth via non-interactive ACP `session/new` first (never popping open browser OAuth),
-        //    then read official CLI quota (`agy -p /usage --output-format json`) only for confirmed authenticated homes.
+        // 3. Verify Antigravity auth strictly via non-interactive `agy acp` (`initialize` -> `session/new` over stdio JSON-RPC).
+        //    IMPORTANT: Never invoke `agy -p /usage` in background/pool refreshes — Google's `agy -p` (`printmode.go`) has no
+        //    `--non-interactive` flag and forcibly opens the user's web browser whenever an account is signed out or expired!
         IEnumerable<Task> agyTasks = [];
         if (AntigravityAgentRunner.TryFindAgyCliExecutable() is not null)
         {
@@ -237,25 +238,20 @@ public sealed partial class AccountPoolService : IDisposable
                     {
                         var home = workspace.Client == ClientKind.Antigravity
                             ? AntigravityAgentRunner.GetHomeForWorkspace(workspace)
-                            : (workspace.AntigravityHome ?? workspace.ElectronUserData);
-                        var authed = await AntigravityAgentRunner.VerifyHomeAuthAsync(home, token).ConfigureAwait(false);
+                            : (workspace.AntigravityHome ?? itemHomeFallback(workspace));
+                        var authed = await AntigravityAgentRunner.VerifyHomeAuthAsync(home, token, forceRefresh: force).ConfigureAwait(false);
                         if (!authed)
-                        {
                             _antigravityUsage.TryRemove(workspace.Id, out _);
-                            return;
-                        }
-
-                        var snap = await AntigravityAgentRunner.ReadCliUsageAsync(home, token).ConfigureAwait(false);
-                        if (snap is not null)
-                            RecordAntigravityUsage(workspace.Id, snap);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-                    catch (Exception ex) { Debug.WriteLine($"[AccountPool] Antigravity CLI usage check skipped for {workspace.Id}: {ex.Message}"); }
+                    catch (Exception ex) { Debug.WriteLine($"[AccountPool] Antigravity ACP auth check skipped for {workspace.Id}: {ex.Message}"); }
                     finally { onEachUpdated?.Invoke(); }
                 });
         }
 
         await Task.WhenAll(codexTasks.Concat(claudeTasks).Concat(agyTasks)).ConfigureAwait(false);
+
+        static string itemHomeFallback(CodexWorkspace w) => w.ElectronUserData;
     }
 
     public AccountPoolSummary BuildSummary(IReadOnlyList<CodexWorkspace> workspaces, int failoverThresholdPercent = 92)

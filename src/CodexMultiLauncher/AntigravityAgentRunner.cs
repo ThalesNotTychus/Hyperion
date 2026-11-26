@@ -304,7 +304,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         try
         {
             var fullHome = Path.GetFullPath(homeRoot);
-            var ttlMs = isAuthenticated ? 60_000 : 8_000;
+            var ttlMs = isAuthenticated ? 180_000 : 30_000;
             HomeAuthCache[fullHome] = (isAuthenticated, true, Environment.TickCount64 + ttlMs);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -316,7 +316,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
     /// Verifies Antigravity authentication non-interactively via official ACP (`initialize` -> `session/new`).
     /// Never triggers interactive browser OAuth popups when unauthenticated (`session/new` returns JSON-RPC `-32000 Authentication required`).
     /// </summary>
-    public static async Task<bool> VerifyHomeAuthAsync(string? homeRoot, CancellationToken token)
+    public static async Task<bool> VerifyHomeAuthAsync(string? homeRoot, CancellationToken token, bool forceRefresh = false)
     {
         if (string.IsNullOrWhiteSpace(homeRoot) || TryFindAgyCliExecutable() is null)
             return false;
@@ -334,7 +334,7 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
         if (!Directory.Exists(fullHome))
             return false;
 
-        if (HomeAuthCache.TryGetValue(fullHome, out var cached) && cached.VerifiedByAcp && Environment.TickCount64 < cached.ExpiresTick)
+        if (!forceRefresh && HomeAuthCache.TryGetValue(fullHome, out var cached) && cached.VerifiedByAcp && Environment.TickCount64 < cached.ExpiresTick)
             return cached.HasAuth;
 
         var defaultUserHome = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
@@ -479,11 +479,15 @@ public sealed class AntigravityAgentRunner : IGroupChatRunner
             var workDir = !string.IsNullOrWhiteSpace(homeRoot) && Directory.Exists(homeRoot)
                 ? Path.GetFullPath(homeRoot)
                 : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var env = !string.IsNullOrWhiteSpace(homeRoot) ? CreateEnvironmentForHome(homeRoot) : null;
+            var baseEnv = !string.IsNullOrWhiteSpace(homeRoot)
+                ? new Dictionary<string, string>(CreateEnvironmentForHome(homeRoot), StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal);
+            // Force remote/headless mode so `agy -p` (`printmode.go`) can NEVER launch a local browser window if unauthenticated
+            baseEnv["SSH_CONNECTION"] = "127.0.0.1 0 127.0.0.1 22";
             var logDir = Path.Combine(workDir, ".gemini", "antigravity");
             Directory.CreateDirectory(logDir);
             var singleLogPath = Path.Combine(logDir, "usage-probe.log");
-            psi = CreateCliArgsStartInfo(agyExe, workDir, ["-p", "/usage", "--output-format", "json", "--log-file", singleLogPath], env);
+            psi = CreateCliArgsStartInfo(agyExe, workDir, ["-p", "/usage", "--output-format", "json", "--log-file", singleLogPath], baseEnv);
         }
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
